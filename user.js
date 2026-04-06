@@ -732,7 +732,6 @@ function parseDateValue(value) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-}
 
 // ======================
 // SEARCH
