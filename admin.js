@@ -163,11 +163,15 @@ async function loadAssets() {
       let lockEdit = asset.status === "Borrowed"
         ? "disabled style='opacity:0.4;pointer-events:none;'" : "";
 
-      // FEATURE 3: show timestamps in admin table
-      const borrowedAt = asset.borrowedAt
-        ? `<span style="font-size:11px;opacity:0.7;">📤 ${formatTS(asset.borrowedAt)}</span>` : "—";
-      const returnedAt = asset.returnedAt
-        ? `<span style="font-size:11px;opacity:0.7;">📥 ${formatTS(asset.returnedAt)}</span>` : "—";
+      // Show transaction date/time details in a single column
+      const transactionDetails = [
+        asset.borrowedAt
+          ? `<div style="font-size:11px;opacity:0.7;">📤 Borrowed: ${formatTS(asset.borrowedAt)}</div>`
+          : "",
+        asset.returnedAt
+          ? `<div style="font-size:11px;opacity:0.7;">📥 Returned: ${formatTS(asset.returnedAt)}</div>`
+          : ""
+      ].filter(Boolean).join("") || "—";
 
       html += `
         <tr>
@@ -176,8 +180,7 @@ async function loadAssets() {
           <td contenteditable="true">${asset.category || ""}</td>
           <td><span class="${statusClass}">${asset.status}</span></td>
           <td>${asset.holder || ""}</td>
-          <td>${borrowedAt}</td>
-          <td>${returnedAt}</td>
+          <td>${transactionDetails}</td>
           <td>
             ${asset.qr ? `<img src="${asset.qr}" width="40" style="cursor:pointer" onclick="downloadQR('${asset.id}','${asset.qr}')">` : "—"}
           </td>
