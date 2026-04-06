@@ -42,7 +42,7 @@ function updateUI() {
       : 'Admin';
 
     nav.innerHTML = `
-      <a href="index.html">Home</a>
+      <a href="index.html">User Page</a>
       <a href="#" class="nav-admin">${formattedUsername}</a>
       <a href="about.html">About</a>
       <a href="#" onclick="logout()">Logout</a>
@@ -53,10 +53,9 @@ function updateUI() {
     loginSection.style.display = "block";
     dashboardSection.style.display = "none";
     nav.innerHTML = `
-      <a href="index.html">Home</a>
-      <a href="#" class="nav-admin">${formattedUsername}</a>
+      <a href="index.html">User Page</a>
       <a href="about.html">About</a>
-      <a href="#" onclick="logout()">Logout</a>
+      <a href="#">Admin</a>
     `;
     mobileNav.innerHTML = nav.innerHTML;
   }
@@ -77,7 +76,6 @@ async function handleLogin(e) {
   }
 
   try {
-    errorDiv.textContent = "Authenticating...";
     errorDiv.style.display = "block";
 
     const result = await jsonpRequest(CONFIG.ADMIN_API_URL, {
