@@ -10,10 +10,11 @@ let stream = null;
 let userEmail = "";
 let userName = "";
 let scannedAsset = "";
-let scannerInstance = null;
 
-let scanLock = false;
 let scannerInstance = null;
+let scanLock = false;
+
+let restartTimeout = null;
 
 // ======================
 // INIT APP
@@ -21,6 +22,7 @@ let scannerInstance = null;
 window.addEventListener("load", () => {
   userEmail = localStorage.getItem("userEmail") || "";
   userName  = localStorage.getItem("userName") || "";
+
   if (typeof google !== "undefined") {
     initLogin();
   } else {
@@ -46,12 +48,11 @@ function initLogin() {
   );
 }
 
-// customLogin is called by the fallback Google button in index.html
 function customLogin() {
-  if (typeof google !== "undefined" && google.accounts && google.accounts.id) {
+  if (typeof google !== "undefined" && google.accounts?.id) {
     google.accounts.id.prompt();
   } else {
-    alert("Google Sign-In is not available. Please refresh the page and try again.");
+    alert("Google Sign-In is not available. Please refresh.");
   }
 }
 
@@ -61,32 +62,30 @@ function handleLogin(response) {
   userEmail = data.email;
   userName = data.name;
 
-  // ✅ Validate FIRST
   if (!userEmail.endsWith(CONFIG.COMPANY_DOMAIN)) {
     alert("Only company accounts allowed");
     return;
   }
 
-  // ✅ THEN save
   localStorage.setItem("userName", userName);
   localStorage.setItem("userEmail", userEmail);
 
-  // ✅ UI update
-  if (userEmail && userName) {
-    document.getElementById("userInfo").innerText = "Logged in: " + userEmail;
+  document.getElementById("userInfo").innerText = "Logged in: " + userEmail;
 
-    const loginWrapper = document.querySelector(".login-wrapper");
-    if (loginWrapper) loginWrapper.style.display = "none";
+  const loginWrapper = document.querySelector(".login-wrapper");
+  if (loginWrapper) loginWrapper.style.display = "none";
 
-    setTimeout(startScanner, 500);
-  }
+  setTimeout(startScanner, 500);
 
-  // ✅ Restore this (you accidentally disabled it)
-  sendEmailNotification({ type: "login", user: userName, email: userEmail });
+  sendEmailNotification({
+    type: "login",
+    user: userName,
+    email: userEmail
+  });
 }
 
 // ======================
-// JWT PARSER
+// JWT
 // ======================
 function parseJwt(token) {
   let base64Url = token.split(".")[1];
@@ -101,16 +100,15 @@ function parseJwt(token) {
   );
 }
 
-//SOUNDSSS
-
+// ======================
+// SOUND + VIBRATION
+// ======================
 function playScanBeep() {
   try {
     const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
     audio.volume = 0.5;
     audio.play();
-  } catch (err) {
-    console.warn("Beep error:", err);
-  }
+  } catch (e) {}
 }
 
 function vibrateOnScan() {
@@ -118,32 +116,30 @@ function vibrateOnScan() {
     if (navigator.vibrate) {
       navigator.vibrate([150, 50, 150]);
     }
-  } catch (err) {
-    console.warn("Vibration error:", err);
-  }
+  } catch (e) {}
 }
 
-//STOP SCANNERRR
+// ======================
+// STOP SCANNER
+// ======================
 function stopScanner() {
   try {
     if (scannerInstance) {
       scannerInstance.clear();
       scannerInstance = null;
-      console.log("Scanner stopped");
     }
-  } catch (err) {
-    console.warn("Stop scanner error:", err);
-  }
+  } catch (e) {}
 }
 
-//Restart scanner
+// ======================
+// RESTART SCANNER
+// ======================
 function restartScanner(delay = 1200) {
-  setTimeout(() => {
-    console.log("Restarting scanner...");
+  clearTimeout(restartTimeout);
 
+  restartTimeout = setTimeout(() => {
     stopScanner();
     startScanner();
-
   }, delay);
 }
 
@@ -154,7 +150,7 @@ function startScanner() {
   if (scannerInstance) return;
 
   if (typeof Html5QrcodeScanner === "undefined") {
-    console.error("QR Scanner library missing");
+    console.error("QR Scanner missing");
     return;
   }
 
@@ -167,7 +163,6 @@ function startScanner() {
 
   scannerInstance.render(async (decodedText) => {
 
-    // 🚫 prevent spam scanning
     if (scanLock) return;
     scanLock = true;
 
@@ -181,23 +176,19 @@ function startScanner() {
 
     document.getElementById("assetID").innerText = decodedText;
 
-    // 🔊📳 feedback
     playScanBeep();
     vibrateOnScan();
 
-    // 📴 stop scanner immediately
     stopScanner();
 
     try {
-      const list = await fetch(
-        CONFIG.API_URL + "?action=getAssets&nocache=" + Date.now()
-      ).then(r => r.json());
+      const list = await fetch(CONFIG.API_URL + "?action=getAssets&nocache=" + Date.now())
+        .then(r => r.json());
 
-      const asset = list.find(
-        a =>
-          a.id === scannedAsset ||
-          a.assetID === scannedAsset ||
-          a.qr === scannedAsset
+      const asset = list.find(a =>
+        a.id === scannedAsset ||
+        a.assetID === scannedAsset ||
+        a.qr === scannedAsset
       );
 
       if (!asset) {
@@ -210,207 +201,70 @@ function startScanner() {
       updateAssetUI(asset);
 
     } catch (err) {
-      console.error(err);
       document.getElementById("status").innerText = "Error loading asset";
+      scanLock = false;
     }
 
-    // unlock scan after short delay
     setTimeout(() => {
       scanLock = false;
     }, 1500);
-
   });
 }
 
 // ======================
-// UPDATE UI
+// UI UPDATE
 // ======================
 function updateAssetUI(asset) {
   document.getElementById("status").innerText =
     `Status: ${asset.status} ${asset.holder ? "| Holder: " + asset.holder : ""}`;
+
   updateActionButtons(asset.status);
 }
 
-document.addEventListener('DOMContentLoaded', function() {
-  const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
-  const mobileNav = document.querySelector('.mobile-nav');
-
-  if (mobileMenuBtn && mobileNav) {
-    mobileMenuBtn.addEventListener('click', function() {
-      mobileNav.classList.toggle('active');
-      document.body.classList.toggle('menu-open');
-    });
-    document.querySelectorAll('.mobile-nav a').forEach(link => {
-      link.addEventListener('click', () => {
-        mobileNav.classList.remove('active');
-        document.body.classList.remove('menu-open');
-      });
-    });
-    document.addEventListener('touchstart', function(e) {
-      if (!mobileNav.contains(e.target) && !mobileMenuBtn.contains(e.target)) {
-        mobileNav.classList.remove('active');
-        document.body.classList.remove('menu-open');
-      }
-    });
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') {
-        mobileNav.classList.remove('active');
-        document.body.classList.remove('menu-open');
-      }
-    });
-  }
-
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('animate-in');
-        observer.unobserve(entry.target);
-      }
-    });
-  }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
-
-  const isMobile = window.innerWidth < 768;
-  document.querySelectorAll('.card, .stat-card, .team-card').forEach(el => {
-    if (!isMobile) observer.observe(el);
-    else el.classList.add('animate-in');
-  });
-});
-
 // ======================
-// BUTTON CONTROL
+// BUTTONS
 // ======================
 function updateActionButtons(status) {
   const borrowBtn = document.getElementById("borrowBtn");
   const returnBtn = document.getElementById("returnBtn");
+
   if (!borrowBtn || !returnBtn) return;
+
   const s = (status || "").toLowerCase();
-  if (s === "available") { borrowBtn.style.display = "block"; returnBtn.style.display = "none"; }
-  else if (s === "borrowed") { borrowBtn.style.display = "none"; returnBtn.style.display = "block"; }
-  else { borrowBtn.style.display = "none"; returnBtn.style.display = "none"; }
-}
 
-// ======================
-// POPUP
-// ======================
-function confirmBorrow() {
-  if (!scannedAsset) return alert("Scan a QR first");
-  document.getElementById("popupAsset").innerText = scannedAsset;
-  document.getElementById("borrowPopup").classList.add("active");
-}
-
-function closePopup() {
-  document.getElementById("borrowPopup").classList.remove("active");
-}
-
-function setupPopupClose() {
-  document.addEventListener("click", function (e) {
-    const popup = document.getElementById("borrowPopup");
-    if (popup && e.target === popup) popup.classList.remove("active");
-  });
+  if (s === "available") {
+    borrowBtn.style.display = "block";
+    returnBtn.style.display = "none";
+  } else if (s === "borrowed") {
+    borrowBtn.style.display = "none";
+    returnBtn.style.display = "block";
+  } else {
+    borrowBtn.style.display = "none";
+    returnBtn.style.display = "none";
+  }
 }
 
 // ======================
 // ACTIONS
 // ======================
-function borrowAsset() { sendAction("borrow"); closePopup(); }
-function returnAsset() { openCamera(); }
-
-// ======================
-// CAMERA
-// ======================
-function openCamera() {
-  const modal = document.getElementById("cameraModal");
-  const video = document.getElementById("cameraPreview");
-  if (!modal || !video) return;
-  modal.style.display = "flex";
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-    .then(s => { stream = s; video.srcObject = stream; })
-    .catch(err => alert("Camera error: " + err));
+function borrowAsset() {
+  sendAction("borrow");
+  closePopup();
 }
 
-function captureReturnPhoto() {
-  const video = document.getElementById("cameraPreview");
-  const canvas = document.getElementById("snapshot");
-  const preview = document.getElementById("photoPreview");
-  if (!video || !canvas || !preview) return;
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext("2d").drawImage(video, 0, 0);
-  capturedImage = canvas.toDataURL("image/png");
-  preview.src = capturedImage;
-  preview.style.display = "block";
-  video.style.display = "none";
-  document.getElementById("submitReturnBtn").style.display = "inline-block";
-  document.getElementById("retakeBtn").style.display = "inline-block";
-}
-
-function retakePhoto() {
-  document.getElementById("photoPreview").style.display = "none";
-  document.getElementById("cameraPreview").style.display = "block";
-  document.getElementById("submitReturnBtn").style.display = "none";
-  document.getElementById("retakeBtn").style.display = "none";
-  capturedImage = "";
-}
-
-function closeCamera() {
-  const modal = document.getElementById("cameraModal");
-  if (modal) modal.style.display = "none";
-  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-  document.getElementById("cameraPreview").style.display = "block";
-  document.getElementById("photoPreview").style.display = "none";
-  capturedImage = "";
+function returnAsset() {
+  openCamera();
 }
 
 // ======================
-// SUBMIT RETURN
-// ======================
-function submitReturnWithPhoto() {
-  if (!capturedImage) return alert("Capture photo first");
-  if (!userEmail) return alert("Login first");
-
-  document.getElementById("status").innerText = "Processing return...";
-  const returnedAt = new Date().toISOString();
-
-  fetch(CONFIG.API_URL + "?nocache=" + Date.now(), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: "returnWithImage",
-      asset: scannedAsset,
-      email: userEmail,
-      name: userName,
-      image: capturedImage,
-      returnedAt: returnedAt        // FEATURE 3: pass timestamp
-    })
-  })
-    .then(r => r.json())
-    .then(async result => {
-      document.getElementById("status").innerText = result.message;
-
-      // FEATURE 1: notify admin on return
-      sendEmailNotification({ type: "return", asset: scannedAsset, user: userName, email: userEmail, timestamp: returnedAt });
-
-      closeCamera();
-      const list = await fetch(CONFIG.API_URL + "?action=getAssets&nocache=" + Date.now()).then(r => r.json());
-      const asset = list.find(a => a.id === scannedAsset);
-      if (asset) updateAssetUI(asset);
-      loadUserAssets();
-    })
-    .catch(err => {
-      console.error(err);
-      document.getElementById("status").innerText = "Return failed";
-    });
-restartScanner();
-}
-
-// ======================
-// BORROW / RETURN ACTIONS
+// BORROW / RETURN REQUEST
 // ======================
 async function sendAction(action) {
   if (!userEmail) return alert("Login first");
   if (!scannedAsset) return alert("Scan QR first");
 
   document.getElementById("status").innerText = "Processing...";
+
   const borrowedAt = new Date().toISOString();
 
   try {
@@ -422,24 +276,80 @@ async function sendAction(action) {
         asset: scannedAsset,
         email: userEmail,
         name: userName,
-        borrowedAt: borrowedAt        // FEATURE 3: pass timestamp
+        borrowedAt
       })
     });
 
     const result = await res.json();
     document.getElementById("status").innerText = result.message;
 
-    // FEATURE 1: notify admin on borrow
-    if (action === "borrow" && result.message && !result.message.toLowerCase().includes("error")) {
-      sendEmailNotification({ type: "borrow", asset: scannedAsset, user: userName, email: userEmail, timestamp: borrowedAt });
+    if (action === "borrow") {
+      sendEmailNotification({
+        type: "borrow",
+        asset: scannedAsset,
+        user: userName,
+        email: userEmail,
+        timestamp: borrowedAt
+      });
     }
 
     loadUserAssets();
+    restartScanner();
+
   } catch (err) {
-    console.error(err);
     document.getElementById("status").innerText = "Error processing request";
   }
-restartScanner();
+}
+
+// ======================
+// RETURN WITH PHOTO
+// ======================
+function submitReturnWithPhoto() {
+  if (!capturedImage) return alert("Capture photo first");
+  if (!userEmail) return alert("Login first");
+
+  document.getElementById("status").innerText = "Processing return...";
+
+  const returnedAt = new Date().toISOString();
+
+  fetch(CONFIG.API_URL + "?nocache=" + Date.now(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "returnWithImage",
+      asset: scannedAsset,
+      email: userEmail,
+      name: userName,
+      image: capturedImage,
+      returnedAt
+    })
+  })
+    .then(r => r.json())
+    .then(async result => {
+      document.getElementById("status").innerText = result.message;
+
+      sendEmailNotification({
+        type: "return",
+        asset: scannedAsset,
+        user: userName,
+        email: userEmail,
+        timestamp: returnedAt
+      });
+
+      closeCamera();
+
+      const list = await fetch(CONFIG.API_URL + "?action=getAssets&nocache=" + Date.now())
+        .then(r => r.json());
+
+      const asset = list.find(a => a.id === scannedAsset);
+      if (asset) updateAssetUI(asset);
+
+      loadUserAssets();
+      restartScanner();
+    })
+    .catch(() => {
+      document.getElementById("status").innerText = "Return failed";
+    });
 }
 
 // ======================
