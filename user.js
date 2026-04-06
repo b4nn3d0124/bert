@@ -233,6 +233,85 @@ function updateAssetUI(asset) {
   }
 }
 
+document.addEventListener('DOMContentLoaded', function () {
+
+  // ======================
+  // MOBILE MENU
+  // ======================
+  const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
+  const mobileNav = document.querySelector('.mobile-nav');
+
+  if (mobileMenuBtn && mobileNav) {
+
+    mobileMenuBtn.addEventListener('click', function () {
+      mobileNav.classList.toggle('active');
+      document.body.classList.toggle('menu-open');
+    });
+
+    // Close menu when clicking links
+    document.querySelectorAll('.mobile-nav a').forEach(link => {
+      link.addEventListener('click', () => {
+        mobileNav.classList.remove('active');
+        document.body.classList.remove('menu-open');
+      });
+    });
+
+    // Close when clicking outside
+    document.addEventListener('touchstart', function (e) {
+      if (
+        mobileNav &&
+        mobileMenuBtn &&
+        !mobileNav.contains(e.target) &&
+        !mobileMenuBtn.contains(e.target)
+      ) {
+        mobileNav.classList.remove('active');
+        document.body.classList.remove('menu-open');
+      }
+    });
+
+    // Close on ESC key
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        mobileNav.classList.remove('active');
+        document.body.classList.remove('menu-open');
+      }
+    });
+  }
+
+  // ======================
+  // SCROLL ANIMATION
+  // ======================
+  const isMobile = window.innerWidth < 768;
+
+  const observer = new IntersectionObserver(
+    (entries, obs) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('animate-in');
+          obs.unobserve(entry.target);
+        }
+      });
+    },
+    {
+      threshold: 0.1,
+      rootMargin: '0px 0px -50px 0px'
+    }
+  );
+
+  const elements = document.querySelectorAll('.card, .stat-card, .team-card');
+
+  if (elements.length > 0) {
+    elements.forEach(el => {
+      if (!isMobile) {
+        observer.observe(el);
+      } else {
+        el.classList.add('animate-in');
+      }
+    });
+  }
+
+});
+
 function autoSwitchActionMode(status) {
   const s = (status || "").toLowerCase();
 
