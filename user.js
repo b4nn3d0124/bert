@@ -1,0 +1,456 @@
+console.log("user.js loaded");
+
+// ======================
+// GLOBAL VARIABLES
+// ======================
+
+let capturedImage = "";
+let stream = null;
+
+let userEmail = "";
+let userName = "";
+let scannedAsset = "";
+let scannerInstance = null;
+
+// ======================
+// INIT APP
+// ======================
+window.addEventListener("load", () => {
+  if (typeof google !== "undefined") {
+    initLogin();
+  } else {
+    console.error("Google Identity Services not loaded");
+  }
+
+  setupPopupClose();
+  loadUserAssets();
+});
+
+// ======================
+// GOOGLE LOGIN
+// ======================
+function initLogin() {
+  google.accounts.id.initialize({
+    client_id: CONFIG.GOOGLE_CLIENT_ID,
+    callback: handleLogin
+  });
+
+  google.accounts.id.renderButton(
+    document.querySelector(".login-wrapper"),
+    { theme: "outline", size: "large", width: "250" }
+  );
+}
+
+// customLogin is called by the fallback Google button in index.html
+function customLogin() {
+  if (typeof google !== "undefined" && google.accounts && google.accounts.id) {
+    google.accounts.id.prompt();
+  } else {
+    alert("Google Sign-In is not available. Please refresh the page and try again.");
+  }
+}
+
+function handleLogin(response) {
+  const data = parseJwt(response.credential);
+
+  userEmail = data.email;
+  userName = data.name;
+
+  if (!userEmail.endsWith(CONFIG.COMPANY_DOMAIN)) {
+    alert("Only company accounts allowed");
+    return;
+  }
+
+  document.getElementById("userInfo").innerText = "Logged in: " + userEmail;
+  document.querySelector(".login-wrapper").style.display = "none";
+
+  // FEATURE 1: Notify admin of login
+  sendEmailNotification({ type: "login", user: userName, email: userEmail });
+
+  setTimeout(startScanner, 500);
+}
+
+// ======================
+// JWT PARSER
+// ======================
+function parseJwt(token) {
+  let base64Url = token.split(".")[1];
+  let base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+  return JSON.parse(
+    decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map(c => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    )
+  );
+}
+
+// ======================
+// SCANNER
+// ======================
+function startScanner() {
+  if (scannerInstance) return;
+  if (typeof Html5QrcodeScanner === "undefined") {
+    console.error("QR Scanner library missing");
+    return;
+  }
+
+  scannerInstance = new Html5QrcodeScanner("scanner", { fps: 10, qrbox: 250 });
+
+  scannerInstance.render(async (decodedText) => {
+    if (decodedText === scannedAsset) return;
+    scannedAsset = decodedText;
+    capturedImage = "";
+    document.getElementById("assetID").innerText = decodedText;
+
+    try {
+      const list = await fetch(CONFIG.API_URL + "?action=getAssets&nocache=" + Date.now()).then(r => r.json());
+      const asset = list.find(a => a.id === scannedAsset || a.assetID === scannedAsset || a.qr === scannedAsset);
+      if (!asset) {
+        document.getElementById("status").innerText = "Asset not found";
+        updateActionButtons("");
+        return;
+      }
+      updateAssetUI(asset);
+    } catch (err) {
+      console.error(err);
+      document.getElementById("status").innerText = "Error loading asset";
+    }
+  });
+}
+
+// ======================
+// UPDATE UI
+// ======================
+function updateAssetUI(asset) {
+  document.getElementById("status").innerText =
+    `Status: ${asset.status} ${asset.holder ? "| Holder: " + asset.holder : ""}`;
+  updateActionButtons(asset.status);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
+  const mobileNav = document.querySelector('.mobile-nav');
+
+  if (mobileMenuBtn && mobileNav) {
+    mobileMenuBtn.addEventListener('click', function() {
+      mobileNav.classList.toggle('active');
+      document.body.classList.toggle('menu-open');
+    });
+    document.querySelectorAll('.mobile-nav a').forEach(link => {
+      link.addEventListener('click', () => {
+        mobileNav.classList.remove('active');
+        document.body.classList.remove('menu-open');
+      });
+    });
+    document.addEventListener('touchstart', function(e) {
+      if (!mobileNav.contains(e.target) && !mobileMenuBtn.contains(e.target)) {
+        mobileNav.classList.remove('active');
+        document.body.classList.remove('menu-open');
+      }
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        mobileNav.classList.remove('active');
+        document.body.classList.remove('menu-open');
+      }
+    });
+  }
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('animate-in');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+  const isMobile = window.innerWidth < 768;
+  document.querySelectorAll('.card, .stat-card, .team-card').forEach(el => {
+    if (!isMobile) observer.observe(el);
+    else el.classList.add('animate-in');
+  });
+});
+
+// ======================
+// BUTTON CONTROL
+// ======================
+function updateActionButtons(status) {
+  const borrowBtn = document.getElementById("borrowBtn");
+  const returnBtn = document.getElementById("returnBtn");
+  if (!borrowBtn || !returnBtn) return;
+  const s = (status || "").toLowerCase();
+  if (s === "available") { borrowBtn.style.display = "block"; returnBtn.style.display = "none"; }
+  else if (s === "borrowed") { borrowBtn.style.display = "none"; returnBtn.style.display = "block"; }
+  else { borrowBtn.style.display = "none"; returnBtn.style.display = "none"; }
+}
+
+// ======================
+// POPUP
+// ======================
+function confirmBorrow() {
+  if (!scannedAsset) return alert("Scan a QR first");
+  document.getElementById("popupAsset").innerText = scannedAsset;
+  document.getElementById("borrowPopup").classList.add("active");
+}
+
+function closePopup() {
+  document.getElementById("borrowPopup").classList.remove("active");
+}
+
+function setupPopupClose() {
+  document.addEventListener("click", function (e) {
+    const popup = document.getElementById("borrowPopup");
+    if (popup && e.target === popup) popup.classList.remove("active");
+  });
+}
+
+// ======================
+// ACTIONS
+// ======================
+function borrowAsset() { sendAction("borrow"); closePopup(); }
+function returnAsset() { openCamera(); }
+
+// ======================
+// CAMERA
+// ======================
+function openCamera() {
+  const modal = document.getElementById("cameraModal");
+  const video = document.getElementById("cameraPreview");
+  if (!modal || !video) return;
+  modal.style.display = "flex";
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+    .then(s => { stream = s; video.srcObject = stream; })
+    .catch(err => alert("Camera error: " + err));
+}
+
+function captureReturnPhoto() {
+  const video = document.getElementById("cameraPreview");
+  const canvas = document.getElementById("snapshot");
+  const preview = document.getElementById("photoPreview");
+  if (!video || !canvas || !preview) return;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  capturedImage = canvas.toDataURL("image/png");
+  preview.src = capturedImage;
+  preview.style.display = "block";
+  video.style.display = "none";
+  document.getElementById("submitReturnBtn").style.display = "inline-block";
+  document.getElementById("retakeBtn").style.display = "inline-block";
+}
+
+function retakePhoto() {
+  document.getElementById("photoPreview").style.display = "none";
+  document.getElementById("cameraPreview").style.display = "block";
+  document.getElementById("submitReturnBtn").style.display = "none";
+  document.getElementById("retakeBtn").style.display = "none";
+  capturedImage = "";
+}
+
+function closeCamera() {
+  const modal = document.getElementById("cameraModal");
+  if (modal) modal.style.display = "none";
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  document.getElementById("cameraPreview").style.display = "block";
+  document.getElementById("photoPreview").style.display = "none";
+  capturedImage = "";
+}
+
+// ======================
+// SUBMIT RETURN
+// ======================
+function submitReturnWithPhoto() {
+  if (!capturedImage) return alert("Capture photo first");
+  if (!userEmail) return alert("Login first");
+
+  document.getElementById("status").innerText = "Processing return...";
+  const returnedAt = new Date().toISOString();
+
+  fetch(CONFIG.API_URL + "?nocache=" + Date.now(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "returnWithImage",
+      asset: scannedAsset,
+      email: userEmail,
+      name: userName,
+      image: capturedImage,
+      returnedAt: returnedAt        // FEATURE 3: pass timestamp
+    })
+  })
+    .then(r => r.json())
+    .then(async result => {
+      document.getElementById("status").innerText = result.message;
+
+      // FEATURE 1: notify admin on return
+      sendEmailNotification({ type: "return", asset: scannedAsset, user: userName, email: userEmail, timestamp: returnedAt });
+
+      closeCamera();
+      const list = await fetch(CONFIG.API_URL + "?action=getAssets&nocache=" + Date.now()).then(r => r.json());
+      const asset = list.find(a => a.id === scannedAsset);
+      if (asset) updateAssetUI(asset);
+      loadUserAssets();
+    })
+    .catch(err => {
+      console.error(err);
+      document.getElementById("status").innerText = "Return failed";
+    });
+}
+
+// ======================
+// BORROW / RETURN ACTIONS
+// ======================
+async function sendAction(action) {
+  if (!userEmail) return alert("Login first");
+  if (!scannedAsset) return alert("Scan QR first");
+
+  document.getElementById("status").innerText = "Processing...";
+  const borrowedAt = new Date().toISOString();
+
+  try {
+    const res = await fetch(CONFIG.API_URL + "?nocache=" + Date.now(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        asset: scannedAsset,
+        email: userEmail,
+        name: userName,
+        borrowedAt: borrowedAt        // FEATURE 3: pass timestamp
+      })
+    });
+
+    const result = await res.json();
+    document.getElementById("status").innerText = result.message;
+
+    // FEATURE 1: notify admin on borrow
+    if (action === "borrow" && result.message && !result.message.toLowerCase().includes("error")) {
+      sendEmailNotification({ type: "borrow", asset: scannedAsset, user: userName, email: userEmail, timestamp: borrowedAt });
+    }
+
+    loadUserAssets();
+  } catch (err) {
+    console.error(err);
+    document.getElementById("status").innerText = "Error processing request";
+  }
+}
+
+// ======================
+// FEATURE 1 — EMAIL NOTIFICATION
+// Calls Apps Script endpoint which sends the email server-side
+// Admin email is stored in localStorage by super_admin settings
+// ======================
+async function sendEmailNotification({ type, asset, user, email, timestamp }) {
+  try {
+    const notifyEmail = localStorage.getItem("bs_notify_email") || "";
+    if (!notifyEmail) return;
+
+    const ts = timestamp ? new Date(timestamp).toLocaleString() : new Date().toLocaleString();
+    let subject = "", body = "";
+
+    if (type === "borrow") {
+      subject = `[BorrowSmart] Asset Borrowed: ${asset}`;
+      body = `Asset ${asset} was borrowed by ${user} (${email}) at ${ts}.`;
+    } else if (type === "return") {
+      subject = `[BorrowSmart] Asset Returned: ${asset}`;
+      body = `Asset ${asset} was returned by ${user} (${email}) at ${ts}.`;
+    } else if (type === "login") {
+      subject = `[BorrowSmart] User Login: ${user}`;
+      body = `User ${user} (${email}) logged into BorrowSmart at ${new Date().toLocaleString()}.`;
+    } else {
+      return;
+    }
+
+    const params = new URLSearchParams({ action: "sendNotificationEmail", to: notifyEmail, subject, body });
+    // Apps Script redirects on GET requests — must use no-cors or the browser blocks it
+    fetch(CONFIG.ADMIN_API_URL + "?" + params.toString(), { mode: "no-cors" })
+      .catch(console.error);
+
+    console.log("Sending email notification:", { type, asset, user, email, timestamp });
+  } catch (e) {
+    console.warn("Email notification error:", e);
+  }
+}
+
+// ======================
+// LOAD ASSETS
+// ======================
+async function loadUserAssets() {
+  const body = document.getElementById("userAssetBody");
+  if (!body) return;
+  body.innerHTML = "<tr><td colspan='6'>Loading...</td></tr>";
+  try {
+    const res = await fetch(CONFIG.API_URL + "?action=getAssets&nocache=" + Date.now());
+    const data = await res.json();
+    renderAssets(data);
+  } catch (err) {
+    console.error(err);
+    body.innerHTML = "<tr><td colspan='6'>Failed to load</td></tr>";
+  }
+}
+
+// ======================
+// FEATURE 3 — RENDER ASSETS with timestamps
+// ======================
+function renderAssets(data) {
+  const body = document.getElementById("userAssetBody");
+  if (!body) return;
+  body.innerHTML = "";
+
+  if (!data || data.length === 0) {
+    body.innerHTML = "<tr><td colspan='6'>No assets found</td></tr>";
+    return;
+  }
+
+  data.forEach(asset => {
+    let statusStyle = "";
+    if (asset.status === "Available") statusStyle = "color:#10b981;font-weight:600;";
+    if (asset.status === "Borrowed")  statusStyle = "color:#ef4444;font-weight:600;";
+
+    const borrowedAt = asset.borrowedAt
+      ? `<span style="font-size:11px;color:var(--fg-muted);">📤 ${formatTS(asset.borrowedAt)}</span>`
+      : `<span style="color:var(--fg-muted);font-size:12px;">—</span>`;
+
+    const returnedAt = asset.returnedAt
+      ? `<span style="font-size:11px;color:var(--fg-muted);">📥 ${formatTS(asset.returnedAt)}</span>`
+      : `<span style="color:var(--fg-muted);font-size:12px;">—</span>`;
+
+    body.innerHTML += `
+      <tr>
+        <td>${asset.name}</td>
+        <td>${asset.category || "—"}</td>
+        <td style="${statusStyle}">${asset.status}</td>
+        <td>${asset.holder || "—"}</td>
+        <td>${borrowedAt}</td>
+        <td>${returnedAt}</td>
+      </tr>
+    `;
+  });
+}
+
+function formatTS(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+      + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  } catch { return iso; }
+}
+
+// ======================
+// SEARCH
+// ======================
+function searchInventory() {
+  const input = document.getElementById("search")?.value.toLowerCase();
+  const rows = document.getElementById("userAssetBody")?.getElementsByTagName("tr");
+  if (!rows) return;
+  for (let row of rows) {
+    let match = false;
+    for (let cell of row.getElementsByTagName("td")) {
+      if (cell.innerText.toLowerCase().includes(input)) { match = true; break; }
+    }
+    row.style.display = match ? "" : "none";
+  }
+}
