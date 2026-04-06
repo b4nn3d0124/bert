@@ -645,14 +645,14 @@ async function sendEmailNotification({ type, asset, user, email, timestamp }) {
 async function loadUserAssets() {
   const body = document.getElementById("userAssetBody");
   if (!body) return;
-  body.innerHTML = "<tr><td colspan='6'>Loading...</td></tr>";
+  body.innerHTML = "<tr><td colspan='5'>Loading...</td></tr>";
   try {
     const res = await fetch(CONFIG.API_URL + "?action=getAssets&nocache=" + Date.now());
     const data = await res.json();
     renderAssets(data);
   } catch (err) {
     console.error(err);
-    body.innerHTML = "<tr><td colspan='6'>Failed to load</td></tr>";
+    body.innerHTML = "<tr><td colspan='5'>Failed to load</td></tr>";
   }
 }
 
@@ -665,7 +665,7 @@ function renderAssets(data) {
   body.innerHTML = "";
 
   if (!data || data.length === 0) {
-    body.innerHTML = "<tr><td colspan='6'>No assets found</td></tr>";
+    body.innerHTML = "<tr><td colspan='5'>No assets found</td></tr>";
     return;
   }
 
@@ -674,13 +674,14 @@ function renderAssets(data) {
     if (asset.status === "Available") statusStyle = "color:#10b981;font-weight:600;";
     if (asset.status === "Borrowed")  statusStyle = "color:#ef4444;font-weight:600;";
 
-    const borrowedAt = asset.borrowedAt
-      ? `<span style="font-size:11px;color:var(--fg-muted);">📤 ${formatTS(asset.borrowedAt)}</span>`
-      : `<span style="color:var(--fg-muted);font-size:12px;">—</span>`;
-
-    const returnedAt = asset.returnedAt
-      ? `<span style="font-size:11px;color:var(--fg-muted);">📥 ${formatTS(asset.returnedAt)}</span>`
-      : `<span style="color:var(--fg-muted);font-size:12px;">—</span>`;
+    const transactionDetails = [
+      asset.borrowedAt
+        ? `<div style="font-size:11px;color:var(--fg-muted);">📤 Borrowed: ${formatTS(asset.borrowedAt)}</div>`
+        : "",
+      asset.returnedAt
+        ? `<div style="font-size:11px;color:var(--fg-muted);">📥 Returned: ${formatTS(asset.returnedAt)}</div>`
+        : ""
+    ].filter(Boolean).join("") || `<span style="color:var(--fg-muted);font-size:12px;">—</span>`;
 
     body.innerHTML += `
       <tr>
@@ -688,8 +689,7 @@ function renderAssets(data) {
         <td>${asset.category || "—"}</td>
         <td style="${statusStyle}">${asset.status}</td>
         <td>${asset.holder || "—"}</td>
-        <td>${borrowedAt}</td>
-        <td>${returnedAt}</td>
+        <td>${transactionDetails}</td>
       </tr>
     `;
   });
