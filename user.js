@@ -12,6 +12,9 @@ let userName = "";
 let scannedAsset = "";
 let scannerInstance = null;
 
+let scanLock = false;
+let scannerInstance = null;
+
 // ======================
 // INIT APP
 // ======================
@@ -98,37 +101,124 @@ function parseJwt(token) {
   );
 }
 
+//SOUNDSSS
+
+function playScanBeep() {
+  try {
+    const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+    audio.volume = 0.5;
+    audio.play();
+  } catch (err) {
+    console.warn("Beep error:", err);
+  }
+}
+
+function vibrateOnScan() {
+  try {
+    if (navigator.vibrate) {
+      navigator.vibrate([150, 50, 150]);
+    }
+  } catch (err) {
+    console.warn("Vibration error:", err);
+  }
+}
+
+//STOP SCANNERRR
+function stopScanner() {
+  try {
+    if (scannerInstance) {
+      scannerInstance.clear();
+      scannerInstance = null;
+      console.log("Scanner stopped");
+    }
+  } catch (err) {
+    console.warn("Stop scanner error:", err);
+  }
+}
+
+//Restart scanner
+function restartScanner(delay = 1200) {
+  setTimeout(() => {
+    console.log("Restarting scanner...");
+
+    stopScanner();
+    startScanner();
+
+  }, delay);
+}
+
 // ======================
 // SCANNER
 // ======================
 function startScanner() {
   if (scannerInstance) return;
+
   if (typeof Html5QrcodeScanner === "undefined") {
     console.error("QR Scanner library missing");
     return;
   }
 
-  scannerInstance = new Html5QrcodeScanner("scanner", { fps: 10, qrbox: 250 });
+  scanLock = false;
+
+  scannerInstance = new Html5QrcodeScanner("scanner", {
+    fps: 10,
+    qrbox: 250
+  });
 
   scannerInstance.render(async (decodedText) => {
-    if (decodedText === scannedAsset) return;
+
+    // 🚫 prevent spam scanning
+    if (scanLock) return;
+    scanLock = true;
+
+    if (decodedText === scannedAsset) {
+      scanLock = false;
+      return;
+    }
+
     scannedAsset = decodedText;
     capturedImage = "";
+
     document.getElementById("assetID").innerText = decodedText;
 
+    // 🔊📳 feedback
+    playScanBeep();
+    vibrateOnScan();
+
+    // 📴 stop scanner immediately
+    stopScanner();
+
     try {
-      const list = await fetch(CONFIG.API_URL + "?action=getAssets&nocache=" + Date.now()).then(r => r.json());
-      const asset = list.find(a => a.id === scannedAsset || a.assetID === scannedAsset || a.qr === scannedAsset);
+      const list = await fetch(
+        CONFIG.API_URL + "?action=getAssets&nocache=" + Date.now()
+      ).then(r => r.json());
+
+      const asset = list.find(
+        a =>
+          a.id === scannedAsset ||
+          a.assetID === scannedAsset ||
+          a.qr === scannedAsset
+      );
+
       if (!asset) {
         document.getElementById("status").innerText = "Asset not found";
         updateActionButtons("");
+        scanLock = false;
         return;
       }
+
       updateAssetUI(asset);
+
     } catch (err) {
       console.error(err);
       document.getElementById("status").innerText = "Error loading asset";
     }
+
+    // unlock scan after short delay
+    setTimeout(() => {
+      scanLock = false;
+    }, 1500);
+
   });
 }
 
@@ -310,6 +400,7 @@ function submitReturnWithPhoto() {
       console.error(err);
       document.getElementById("status").innerText = "Return failed";
     });
+restartScanner();
 }
 
 // ======================
@@ -348,6 +439,7 @@ async function sendAction(action) {
     console.error(err);
     document.getElementById("status").innerText = "Error processing request";
   }
+restartScanner();
 }
 
 // ======================
