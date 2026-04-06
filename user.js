@@ -366,8 +366,10 @@ async function sendEmailNotification({ type, asset, user, email, timestamp }) {
 
     const params = new URLSearchParams({ action: "sendNotificationEmail", to: notifyEmail, subject, body });
     // Apps Script redirects on GET requests — must use no-cors or the browser blocks it
-    fetch(CONFIG.ADMIN_API_URL + "?" + params.toString(), { mode: "no-cors" })
-      .catch(console.error);
+    fetch(CONFIG.ADMIN_API_URL + "?" + params.toString())
+    .then(res => res.text())
+    .then(data => console.log("Email response:", data))
+    .catch(err => console.error("Email error:", err));
 
     console.log("Sending email notification:", { type, asset, user, email, timestamp });
   } catch (e) {
