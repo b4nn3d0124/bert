@@ -3,7 +3,8 @@ const CONFIG = {
   ADMIN_API_URL: "https://script.google.com/macros/s/AKfycbzwAbpJb1KZnP8Y4jl9YUkM996TJP2BTs7ImAbo0oYWsFtMsgmEkiiqo8c0gEWCCIA/exec",
   JSON_API_URL: "https://script.google.com/macros/s/AKfycbwvkADinvGO_ZnTzmVM4owXMf2uBN_Hba7LXgHu-AJFNHVaVqRiW_ENY-24JV9AA_AJ/exec",
   GOOGLE_CLIENT_ID: "955024166373-hjrj6splihhs19pj96fgpv0ri4cf7u2q.apps.googleusercontent.com",
-  COMPANY_DOMAIN: "gmail.com"
+  COMPANY_DOMAIN: "gmail.com",
+  SUPERADMIN_PASSWORD: "BorrowSmart@2026"
 };
 
 window.CONFIG = CONFIG;
