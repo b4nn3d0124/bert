@@ -43,8 +43,8 @@ function updateUI() {
 
     nav.innerHTML = `
       <a href="index.html">Home</a>
-      <a href="contact.html">Inbox</a>
       <a href="#" class="nav-admin">${formattedUsername}</a>
+      <a href="about.html">About</a>
       <a href="#" onclick="logout()">Logout</a>
     `;
     mobileNav.innerHTML = nav.innerHTML;
@@ -54,9 +54,9 @@ function updateUI() {
     dashboardSection.style.display = "none";
     nav.innerHTML = `
       <a href="index.html">Home</a>
+      <a href="#" class="nav-admin">${formattedUsername}</a>
       <a href="about.html">About</a>
-      <a href="contact.html">Contact</a>
-      <a href="admin.html" class="nav-admin active">Admin</a>
+      <a href="#" onclick="logout()">Logout</a>
     `;
     mobileNav.innerHTML = nav.innerHTML;
   }
