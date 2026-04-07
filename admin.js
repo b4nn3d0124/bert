@@ -1,22 +1,9 @@
-// ================= CONFIG =================
-const CONFIG = {
-  ADMIN_API_URL: "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE"
-};
 
-// ================= API HELPER =================
-async function apiRequest(params, method = "POST") {
-  const url = CONFIG.ADMIN_API_URL;
+// ================= LOGIN STATE =================
+let keySequence = [];
+const secretKey = ["@", "@"]; // trigger sequence (you can change)
 
-  const res = await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: method === "GET" ? null : JSON.stringify(params)
-  });
-
-  return await res.json();
-}
-
-// ================= LOGIN & UI =================
+// ================= UI UPDATE =================
 function updateUI() {
   const isLoggedIn = localStorage.getItem("adminLoggedIn") === "true";
   const currentAdmin = JSON.parse(localStorage.getItem("currentAdmin") || "{}");
@@ -104,20 +91,16 @@ async function handleLogin(e) {
 }
 
 // ================= NOTIFICATION =================
-function notifyAdminAccess(username, adminEmail) {
-  try {
-    const notifyEmail = localStorage.getItem("bs_notify_email") || "";
-    if (!notifyEmail) return;
+function notifyAdminAccess(username) {
+  const notifyEmail = localStorage.getItem("bs_notify_email") || "";
+  if (!notifyEmail) return;
 
-    apiRequest({
-      action: "sendNotificationEmail",
-      to: notifyEmail,
-      subject: `[BorrowSmart] Admin Login: ${username}`,
-      body: `Admin "${username}" logged in at ${new Date().toLocaleString()}`
-    }).catch(() => {});
-  } catch (err) {
-    console.warn("Notify failed:", err);
-  }
+  apiRequest({
+    action: "sendNotificationEmail",
+    to: notifyEmail,
+    subject: `[BorrowSmart] Admin Login: ${username}`,
+    body: `Admin "${username}" logged in at ${new Date().toLocaleString()}`
+  }).catch(() => {});
 }
 
 // ================= LOGOUT =================
@@ -127,10 +110,7 @@ function logout() {
   updateUI();
 }
 
-// ================= SECRET KEY =================
-let keySequence = [];
-const secretKey = "@";
-
+// ================= SECRET KEY ACCESS =================
 function initSecretKey() {
   document.addEventListener("keydown", (event) => {
     const dash = document.getElementById("dashboardSection");
@@ -142,7 +122,7 @@ function initSecretKey() {
         keySequence.shift();
       }
 
-      if (keySequence.join("") === secretKey) {
+      if (keySequence.join("") === secretKey.join("")) {
         window.location.href = "super_admin.html";
         keySequence = [];
       }
@@ -198,6 +178,7 @@ async function loadAssets() {
 
     document.getElementById("borrowedAssets").innerText = borrowed;
     document.getElementById("availableAssets").innerText = available;
+
   } catch (err) {
     console.error("Load assets error:", err);
   }
@@ -262,7 +243,7 @@ async function addAsset() {
   }
 }
 
-// ================= GENERATE ID =================
+// ================= GENERATE ASSET ID =================
 async function generateNextAssetID() {
   const data = await apiRequest({ action: "getAssets" }, "GET");
 
@@ -275,7 +256,7 @@ async function generateNextAssetID() {
   return "AST-" + String(max + 1).padStart(3, "0");
 }
 
-// ================= QR =================
+// ================= QR GENERATION =================
 function generateQR(id) {
   const container = document.getElementById("qrPreviewContainer");
   const img = document.getElementById("qrPreview");
@@ -287,6 +268,35 @@ function generateQR(id) {
     "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + id;
 }
 
+// ================= QR DOWNLOAD (FIXED) =================
+function downloadQR(id, url) {
+  if (!url) return alert("No QR code available");
+
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.src = url;
+
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+
+    canvas.toBlob(blob => {
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${id}-QR.png`;
+      link.click();
+    });
+  };
+
+  img.onerror = () => {
+    alert("Failed to load QR image");
+  };
+}
+
 // ================= SEARCH =================
 function searchInventory() {
   const input = document.getElementById("search").value.toLowerCase();
@@ -296,36 +306,6 @@ function searchInventory() {
       ? ""
       : "none";
   });
-}
-
-function downloadQR(id, url) {
-  if (!url) {
-    alert("No QR code available");
-    return;
-  }
-
-  fetch(url)
-    .then(res => {
-      if (!res.ok) throw new Error("Failed to fetch QR");
-      return res.blob();
-    })
-    .then(blob => {
-      const objectURL = URL.createObjectURL(blob);
-
-      const link = document.createElement("a");
-      link.href = objectURL;
-      link.download = `${id}-QR.png`;
-
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      URL.revokeObjectURL(objectURL);
-    })
-    .catch(err => {
-      console.error("QR download error:", err);
-      alert("Failed to download QR code");
-    });
 }
 
 // ================= CSV EXPORT =================
