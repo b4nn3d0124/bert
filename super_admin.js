@@ -19,6 +19,97 @@ function waitForConfig() {
   });
 }
 
+// ================= SHOPIFY LOADING =================
+function ensureFallbackLoadingOverlay() {
+  let overlay = document.getElementById("fallbackLoadingOverlay");
+  if (overlay) return overlay;
+
+  overlay = document.createElement("div");
+  overlay.id = "fallbackLoadingOverlay";
+  overlay.innerHTML = `
+    <div class="fallback-loading-card">
+      <div class="tenor-gif-embed" data-postid="14596258" data-share-method="host" data-aspect-ratio="0.965625" data-width="100%">
+        <a href="https://tenor.com/view/polskie-radio-disco-polo-polski-rock-duck-walking-gif-14596258">Polskie Radio Disco Polo Sticker</a>
+        from
+        <a href="https://tenor.com/search/polskie+radio-stickers">Polskie Radio Stickers</a>
+      </div>
+      <p>Loading...</p>
+    </div>
+  `;
+
+  const style = document.createElement("style");
+  style.id = "fallbackLoadingOverlayStyle";
+  style.textContent = `
+    #fallbackLoadingOverlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(10, 15, 25, 0.65);
+      z-index: 99999;
+      backdrop-filter: blur(2px);
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    #fallbackLoadingOverlay.is-active {
+      display: flex;
+    }
+
+    #fallbackLoadingOverlay .fallback-loading-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 16px;
+      padding: 14px 18px;
+      color: #f8fafc;
+      font-weight: 600;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+    }
+
+    #fallbackLoadingOverlay .tenor-gif-embed {
+      width: 100%;
+      max-width: 280px;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    #fallbackLoadingOverlay p {
+      margin: 0;
+      letter-spacing: 0.02em;
+    }
+  `;
+
+  if (!document.getElementById("fallbackLoadingOverlayStyle")) {
+    document.head.appendChild(style);
+  }
+
+  if (!document.querySelector('script[src="https://tenor.com/embed.js"]')) {
+    const tenorScript = document.createElement("script");
+    tenorScript.src = "https://tenor.com/embed.js";
+    tenorScript.async = true;
+    document.head.appendChild(tenorScript);
+  }
+
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function setShopifyLoading(isLoading) {
+  if (window.shopify && typeof window.shopify.loading === "function") {
+    window.shopify.loading(isLoading);
+    return;
+  }
+
+  const overlay = ensureFallbackLoadingOverlay();
+  overlay.classList.toggle("is-active", Boolean(isLoading));
+}
+
+
 // ================= INITIALIZATION =================
 document.addEventListener('DOMContentLoaded', async function() {
   console.log('Super Admin page loaded');
@@ -89,6 +180,7 @@ function jsonpRequest(url, params) {
 
 // Load accounts from Google Sheets using JSONP
 async function loadAccounts() {
+  setShopifyLoading(true);
   try {
     // Double-check CONFIG is available
     if (typeof CONFIG === 'undefined' || !CONFIG.ADMIN_API_URL) {
@@ -118,6 +210,8 @@ async function loadAccounts() {
   } catch (error) {
     console.error('Error loading admin accounts:', error);
     showErrorPopup('Error', 'Failed to load admin accounts: ' + error.message);
+  } finally {
+    setShopifyLoading(false);
   }
 }
 
@@ -146,7 +240,8 @@ async function addAccount() {
     showErrorPopup('Error', 'Username already exists');
     return;
   }
-  
+
+  setShopifyLoading(true);
   try {
     // Create the data object
     const data = {
@@ -185,6 +280,8 @@ async function addAccount() {
   } catch (error) {
     console.error('Error adding admin account:', error);
     showErrorPopup('Error', 'Failed to add admin account: ' + error.message);
+  } finally {
+    setShopifyLoading(false);
   }
 }
 
@@ -214,7 +311,8 @@ async function saveAccountChanges() {
     showErrorPopup('Error', 'Username already exists');
     return;
   }
-  
+
+  setShopifyLoading(true);
   try {
     // Create the data object
     const data = {
@@ -246,6 +344,8 @@ async function saveAccountChanges() {
   } catch (error) {
     console.error('Error updating admin account:', error);
     showErrorPopup('Error', 'Failed to update admin account: ' + error.message);
+  } finally {
+    setShopifyLoading(false);
   }
 }
 
@@ -260,6 +360,7 @@ async function deleteAccount(id) {
   }
   
   if (confirm(`Are you sure you want to delete the admin account "${account.username}"?`)) {
+    setShopifyLoading(true);
     try {
       console.log('Deleting admin account:', id);
       
@@ -281,12 +382,15 @@ async function deleteAccount(id) {
     } catch (error) {
       console.error('Error deleting admin account:', error);
       showErrorPopup('Error', 'Failed to delete admin account: ' + error.message);
+    } finally {
+      setShopifyLoading(false);
     }
   }
 }
 
 // Delete multiple admin accounts from Google Sheets
 async function confirmDelete() {
+  setShopifyLoading(true);
   try {
     console.log('Deleting selected admin accounts:', Array.from(selectedAccounts));
     
@@ -315,6 +419,8 @@ async function confirmDelete() {
     console.error('Error deleting admin accounts:', error);
     closeDeletePopup();
     showErrorPopup('Error', 'Failed to delete admin accounts: ' + error.message);
+  } finally {
+    setShopifyLoading(false);
   }
 }
 
