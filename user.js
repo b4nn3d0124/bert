@@ -17,6 +17,98 @@ let scanLock = false;
 let restartTimeout = null;
 
 // ======================
+// SHOPIFY LOADING
+// ======================
+function ensureFallbackLoadingOverlay() {
+  let overlay = document.getElementById("fallbackLoadingOverlay");
+  if (overlay) return overlay;
+
+  overlay = document.createElement("div");
+  overlay.id = "fallbackLoadingOverlay";
+  overlay.innerHTML = `
+    <div class="fallback-loading-card">
+      <div class="tenor-gif-embed" data-postid="14596258" data-share-method="host" data-aspect-ratio="0.965625" data-width="100%">
+        <a href="https://tenor.com/view/polskie-radio-disco-polo-polski-rock-duck-walking-gif-14596258">Polskie Radio Disco Polo Sticker</a>
+        from
+        <a href="https://tenor.com/search/polskie+radio-stickers">Polskie Radio Stickers</a>
+      </div>
+      <p>Loading...</p>
+    </div>
+  `;
+
+  const style = document.createElement("style");
+  style.id = "fallbackLoadingOverlayStyle";
+  style.textContent = `
+    #fallbackLoadingOverlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(10, 15, 25, 0.65);
+      z-index: 99999;
+      backdrop-filter: blur(2px);
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    #fallbackLoadingOverlay.is-active {
+      display: flex;
+    }
+
+    #fallbackLoadingOverlay .fallback-loading-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 16px;
+      padding: 14px 18px;
+      color: #f8fafc;
+      font-weight: 600;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+    }
+
+    #fallbackLoadingOverlay .tenor-gif-embed {
+      width: 100%;
+      max-width: 280px;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    #fallbackLoadingOverlay p {
+      margin: 0;
+      letter-spacing: 0.02em;
+    }
+  `;
+
+  if (!document.getElementById("fallbackLoadingOverlayStyle")) {
+    document.head.appendChild(style);
+  }
+
+  if (!document.querySelector('script[src="https://tenor.com/embed.js"]')) {
+    const tenorScript = document.createElement("script");
+    tenorScript.src = "https://tenor.com/embed.js";
+    tenorScript.async = true;
+    document.head.appendChild(tenorScript);
+  }
+
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function setShopifyLoading(isLoading) {
+  if (window.shopify && typeof window.shopify.loading === "function") {
+    window.shopify.loading(isLoading);
+    return;
+  }
+
+  const overlay = ensureFallbackLoadingOverlay();
+  overlay.classList.toggle("is-active", Boolean(isLoading));
+}
+
+// ======================
 // INIT APP
 // ======================
 window.addEventListener("load", () => {
@@ -464,6 +556,7 @@ async function sendAction(action) {
   if (!userEmail) return alert("Login first");
   if (!scannedAsset) return alert("Scan QR first");
 
+  setShopifyLoading(true);
   document.getElementById("status").innerText = "Processing...";
 
   const borrowedAt = new Date().toISOString();
@@ -500,6 +593,8 @@ async function sendAction(action) {
 
   } catch (err) {
     document.getElementById("status").innerText = "Error processing request";
+  } finally {
+    setShopifyLoading(false);
   }
 }
 
@@ -557,6 +652,7 @@ function submitReturnWithPhoto() {
   if (!capturedImage) return alert("Capture photo first");
   if (!userEmail) return alert("Login first");
 
+  setShopifyLoading(true);
   document.getElementById("status").innerText = "Processing return...";
 
   const returnedAt = new Date().toISOString();
@@ -599,6 +695,9 @@ function submitReturnWithPhoto() {
     })
     .catch(() => {
       document.getElementById("status").innerText = "Return failed";
+    })
+    .finally(() => {
+      setShopifyLoading(false);
     });
 }
 
@@ -647,6 +746,7 @@ async function sendEmailNotification({ type, asset, user, email, timestamp }) {
 async function loadUserAssets() {
   const body = document.getElementById("userAssetBody");
   if (!body) return;
+  setShopifyLoading(true);
   body.innerHTML = "<tr><td colspan='5'>Loading...</td></tr>";
   try {
     const res = await fetch(CONFIG.API_URL + "?action=getAssets&nocache=" + Date.now());
@@ -655,6 +755,8 @@ async function loadUserAssets() {
   } catch (err) {
     console.error(err);
     body.innerHTML = "<tr><td colspan='5'>Failed to load</td></tr>";
+  } finally {
+    setShopifyLoading(false);
   }
 }
 
