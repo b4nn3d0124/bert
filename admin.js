@@ -1,9 +1,28 @@
 
-// ================= LOGIN STATE =================
-let keySequence = [];
-const secretKey = ["@", "@"]; // trigger sequence (you can change)
+// ================= JSONP HELPER FUNCTION =================
+function jsonpRequest(url, params) {
+  return new Promise((resolve, reject) => {
+    const callbackName = 'jsonp_callback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+    const jsonpUrl = url + (url.includes('?') ? '&' : '?') + 'callback=' + callbackName;
+    const paramString = new URLSearchParams(params).toString();
+    const fullUrl = jsonpUrl + (paramString ? '&' + paramString : '');
+    const script = document.createElement('script');
+    script.src = fullUrl;
+    window[callbackName] = function (data) {
+      delete window[callbackName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+      resolve(data);
+    };
+    script.onerror = function () {
+      delete window[callbackName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+      reject(new Error('JSONP request failed'));
+    };
+    document.body.appendChild(script);
+  });
+}
 
-// ================= UI UPDATE =================
+// ================= LOGIN & AUTH =================
 function updateUI() {
   const isLoggedIn = localStorage.getItem("adminLoggedIn") === "true";
   const currentAdmin = JSON.parse(localStorage.getItem("currentAdmin") || "{}");
@@ -19,9 +38,9 @@ function updateUI() {
     loginSection.style.display = "none";
     dashboardSection.style.display = "block";
 
-    const username = currentAdmin.username || "Admin";
-    const formattedUsername =
-      username.charAt(0).toUpperCase() + username.slice(1);
+    const formattedUsername = currentAdmin.username
+      ? currentAdmin.username.charAt(0).toUpperCase() + currentAdmin.username.slice(1)
+      : 'Admin';
 
     nav.innerHTML = `
       <a href="index.html">User Page</a>
@@ -29,19 +48,16 @@ function updateUI() {
       <a href="about.html">About</a>
       <a href="#" onclick="logout()">Logout</a>
     `;
-
     mobileNav.innerHTML = nav.innerHTML;
     loadAssets();
   } else {
     loginSection.style.display = "block";
     dashboardSection.style.display = "none";
-
     nav.innerHTML = `
       <a href="index.html">User Page</a>
       <a href="about.html">About</a>
       <a href="#">Admin</a>
     `;
-
     mobileNav.innerHTML = nav.innerHTML;
   }
 }
@@ -61,10 +77,10 @@ async function handleLogin(e) {
   }
 
   try {
-    errorDiv.textContent = "Authenticating...";
+    errorDiv.textContent = "Authentication...";
     errorDiv.style.display = "block";
 
-    const result = await apiRequest({
+    const result = await jsonpRequest(CONFIG.ADMIN_API_URL, {
       action: "authenticate",
       username: user,
       password: pass
@@ -73,9 +89,9 @@ async function handleLogin(e) {
     if (result.success) {
       localStorage.setItem("adminLoggedIn", "true");
       localStorage.setItem("currentAdmin", JSON.stringify(result.account));
-
       errorDiv.style.display = "none";
 
+      // FEATURE 1: Notify admin that admin page was accessed
       notifyAdminAccess(user, result.account?.email || "");
 
       updateUI();
@@ -83,47 +99,43 @@ async function handleLogin(e) {
       errorDiv.textContent = result.error || "Invalid credentials";
       errorDiv.style.display = "block";
     }
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error(error);
     errorDiv.textContent = "Authentication failed.";
     errorDiv.style.display = "block";
   }
 }
 
-// ================= NOTIFICATION =================
-function notifyAdminAccess(username) {
-  const notifyEmail = localStorage.getItem("bs_notify_email") || "";
-  if (!notifyEmail) return;
-
-  apiRequest({
-    action: "sendNotificationEmail",
-    to: notifyEmail,
-    subject: `[BorrowSmart] Admin Login: ${username}`,
-    body: `Admin "${username}" logged in at ${new Date().toLocaleString()}`
-  }).catch(() => {});
+// FEATURE 1: Send email when admin page is accessed
+function notifyAdminAccess(username, adminEmail) {
+  try {
+    const notifyEmail = localStorage.getItem("bs_notify_email") || "";
+    if (!notifyEmail) return;
+    const subject = `[BorrowSmart] Admin Login: ${username}`;
+    const body = `Admin account "${username}" logged into the admin dashboard at ${new Date().toLocaleString()}.`;
+    const params = new URLSearchParams({ action: "sendNotificationEmail", to: notifyEmail, subject, body });
+    fetch(CONFIG.ADMIN_API_URL + "?" + params.toString(), { mode: "no-cors" }).catch(() => {});
+  } catch (e) { console.warn("Notify failed:", e); }
 }
 
-// ================= LOGOUT =================
 function logout() {
   localStorage.removeItem("adminLoggedIn");
   localStorage.removeItem("currentAdmin");
   updateUI();
 }
 
-// ================= SECRET KEY ACCESS =================
+// ================= SECRET KEY =================
+let keySequence = [];
+const secretKey = '@';
+
 function initSecretKey() {
-  document.addEventListener("keydown", (event) => {
-    const dash = document.getElementById("dashboardSection");
-
-    if (dash && dash.style.display !== "none") {
+  document.addEventListener('keydown', function (event) {
+    const dash = document.getElementById('dashboardSection');
+    if (dash && dash.style.display !== 'none') {
       keySequence.push(event.key);
-
-      if (keySequence.length > secretKey.length) {
-        keySequence.shift();
-      }
-
-      if (keySequence.join("") === secretKey.join("")) {
-        window.location.href = "super_admin.html";
+      if (keySequence.length > secretKey.length) keySequence.shift();
+      if (keySequence.join('') === secretKey) {
+        window.location.href = 'super_admin.html';
         keySequence = [];
       }
     }
@@ -133,8 +145,7 @@ function initSecretKey() {
 // ================= LOAD ASSETS =================
 async function loadAssets() {
   try {
-    const data = await apiRequest({ action: "getAssets" }, "GET");
-
+    const data = await jsonpRequest(CONFIG.API_URL, { action: "getAssets" });
     const body = document.getElementById("assetBody");
     if (!body) return;
 
@@ -146,17 +157,16 @@ async function loadAssets() {
       if (asset.status === "Borrowed") borrowed++;
       if (asset.status === "Available") available++;
 
-      const statusClass =
-        asset.status === "Available"
-          ? "badge badge-green"
-          : "badge badge-red";
+      let statusClass = "badge";
+      if (asset.status === "Available") statusClass += " badge-green";
+      else if (asset.status === "Borrowed") statusClass += " badge-red";
 
-      const lockEdit =
-        asset.status === "Borrowed"
-          ? "disabled style='opacity:0.4;pointer-events:none;'"
-          : "";
+      let lockEdit = asset.status === "Borrowed"
+        ? "disabled style='opacity:0.4;pointer-events:none;'" : "";
 
-      const tx = formatTransactionDateTime(asset.updatedAt);
+      const txValue = resolveTransactionDateTime(asset);
+      const formattedTx = formatTransactionDateTime(txValue);
+      const transactionDetails = `<span style='font-size:12px;color:#cbd5e1;'>${formattedTx}</span>`;
 
       html += `
         <tr>
@@ -165,7 +175,10 @@ async function loadAssets() {
           <td contenteditable="true">${asset.category || ""}</td>
           <td><span class="${statusClass}">${asset.status}</span></td>
           <td>${asset.holder || ""}</td>
-          <td>${tx}</td>
+          <td>${transactionDetails}</td>
+          <td>
+            ${asset.qr ? `<img src="${asset.qr}" width="40" style="cursor:pointer" onclick="downloadQR('${asset.id}','${asset.qr}')">` : "—"}
+          </td>
           <td>
             <button onclick="saveEdit(this,'${asset.id}')" ${lockEdit}>💾</button>
             <button onclick="deleteAsset('${asset.id}')">🗑️</button>
@@ -175,183 +188,184 @@ async function loadAssets() {
     });
 
     body.innerHTML = html;
-
     document.getElementById("borrowedAssets").innerText = borrowed;
     document.getElementById("availableAssets").innerText = available;
-
-  } catch (err) {
-    console.error("Load assets error:", err);
+  } catch (error) {
+    console.error(error);
   }
 }
 
-// ================= FORMAT DATE =================
+// TRansaction
+
+function resolveTransactionDateTime(asset) {
+  const transactionLog = JSON.parse(localStorage.getItem("assetTransactions") || "{}");
+  const localEntry = transactionLog[asset.id];
+
+  return (
+    asset.transactionDateTime ||
+    asset.transactionAt ||
+    asset.lastTransactionAt ||
+    asset.lastUpdated ||
+    asset.updatedAt ||
+    asset.borrowedAt ||
+    asset.returnedAt ||
+    localEntry?.dateTime ||
+    ""
+  );
+}
+
 function formatTransactionDateTime(value) {
   if (!value) return "-";
   const date = new Date(value);
-  if (isNaN(date.getTime())) return value;
+  if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
 }
 
-// ================= SAVE EDIT =================
-async function saveEdit(btn, id) {
-  const row = btn.closest("tr");
+// ================= DOWNLOAD QR =================
+function downloadQR(id, url) {
+  fetch(url)
+    .then(res => res.blob())
+    .then(blob => {
+      const link = document.createElement("a");
+      const objectURL = URL.createObjectURL(blob);
+      link.href = objectURL;
+      link.download = id + ".png";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectURL);
+    })
+    .catch(() => alert("Failed to download QR"));
+}
 
-  await apiRequest({
+// ================= EDIT =================
+function saveEdit(btn, id) {
+  const row = btn.closest("tr");
+  jsonpRequest(CONFIG.API_URL, {
     action: "editAsset",
     assetID: id,
     name: row.cells[1].innerText,
-    category: row.cells[2].innerText
-  });
-
-  loadAssets();
+    category: row.cells[2].innerText,
+    location: ""
+  })
+    .then(() => loadAssets())
+    .catch(() => alert("Edit failed"));
 }
 
-// ================= DELETE ASSET =================
-async function deleteAsset(id) {
+// ================= DELETE =================
+function deleteAsset(id) {
   if (!confirm("Delete this asset?")) return;
-
-  await apiRequest({
-    action: "deleteAsset",
-    assetID: id
-  });
-
-  loadAssets();
+  jsonpRequest(CONFIG.API_URL, { action: "deleteAsset", assetID: id })
+    .then(() => loadAssets())
+    .catch(() => alert("Delete failed"));
 }
 
 // ================= ADD ASSET =================
 async function addAsset() {
-  const name = document.getElementById("assetName").value.trim();
-  const category = document.getElementById("category").value.trim();
+  let name = document.getElementById("assetName").value.trim();
+  let category = document.getElementById("category").value.trim();
+  if (!name) { alert("Name required"); return; }
 
-  if (!name) return alert("Name required");
-
-  const assetID = await generateNextAssetID();
-
-  const res = await apiRequest({
-    action: "addAsset",
-    assetID,
-    name,
-    category
-  });
-
-  if (res.success) {
-    alert("Asset added: " + assetID);
-    loadAssets();
-    document.getElementById("addAssetForm").reset();
-  } else {
-    alert(res.error || "Failed to add asset");
+  try {
+    const assetID = await generateNextAssetID();
+    const res = await fetch(CONFIG.API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "addAsset", assetID, name, category, location: "" })
+    });
+    const result = await res.json();
+    if (result.message === "Asset added successfully") {
+      generateQR(assetID);
+      alert("Asset added successfully: " + assetID);
+      loadAssets();
+      document.getElementById("addAssetForm").reset();
+    } else {
+      alert(result.message || "Failed to add asset");
+    }
+  } catch (error) {
+    console.error("Error adding asset:", error);
+    alert("Failed to add asset");
   }
 }
 
-// ================= GENERATE ASSET ID =================
 async function generateNextAssetID() {
-  const data = await apiRequest({ action: "getAssets" }, "GET");
-
-  if (!data.length) return "AST-001";
-
-  const max = Math.max(
-    ...data.map(a => parseInt((a.id || "").replace("AST-", "")) || 0)
-  );
-
-  return "AST-" + String(max + 1).padStart(3, "0");
+  try {
+    const data = await jsonpRequest(CONFIG.API_URL, { action: "getAssets" });
+    if (!data || data.length === 0) return "AST-001";
+    const numbers = data.map(asset => {
+      const match = asset.id.match(/AST-(\d+)/);
+      return match ? parseInt(match[1], 10) : 0;
+    });
+    return "AST-" + String(Math.max(...numbers) + 1).padStart(3, "0");
+  } catch { return "AST-" + Date.now(); }
 }
 
-// ================= QR GENERATION =================
+// ================= QR =================
 function generateQR(id) {
   const container = document.getElementById("qrPreviewContainer");
   const img = document.getElementById("qrPreview");
-
   if (!container || !img) return;
-
   container.style.display = "block";
-  img.src =
-    "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + id;
-}
-
-// ================= QR DOWNLOAD (FIXED) =================
-function downloadQR(id, url) {
-  if (!url) return alert("No QR code available");
-
-  const img = new Image();
-  img.crossOrigin = "anonymous";
-  img.src = url;
-
-  img.onload = () => {
-    const canvas = document.createElement("canvas");
-    canvas.width = img.width;
-    canvas.height = img.height;
-
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(img, 0, 0);
-
-    canvas.toBlob(blob => {
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `${id}-QR.png`;
-      link.click();
-    });
-  };
-
-  img.onerror = () => {
-    alert("Failed to load QR image");
-  };
+  img.src = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + id;
 }
 
 // ================= SEARCH =================
 function searchInventory() {
-  const input = document.getElementById("search").value.toLowerCase();
-
+  let input = document.getElementById("search").value.toLowerCase();
   document.querySelectorAll("#assetBody tr").forEach(row => {
-    row.style.display = row.innerText.toLowerCase().includes(input)
-      ? ""
-      : "none";
+    row.style.display = row.innerText.toLowerCase().includes(input) ? "" : "none";
   });
 }
 
-// ================= CSV EXPORT =================
+// ================= CSV =================
 function downloadCSV() {
-  const table = document.querySelector("table");
+  let table = document.querySelector("table");
   if (!table) return;
-
-  const csv = [];
-
+  let csv = [];
   table.querySelectorAll("tr").forEach(row => {
-    const cols = [...row.querySelectorAll("td,th")].map(col =>
-      `"${col.innerText.replace(/"/g, '""')}"`
-    );
-    csv.push(cols.join(","));
+    let rowData = [];
+    row.querySelectorAll("td,th").forEach(col => rowData.push('"' + col.innerText.replace(/"/g, '""') + '"'));
+    csv.push(rowData.join(","));
   });
-
-  const blob = new Blob([csv.join("\n")], { type: "text/csv" });
-  const link = document.createElement("a");
-
-  link.href = URL.createObjectURL(blob);
-  link.download = "BorrowSmart_Inventory.csv";
+  let link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([csv.join("\n")], { type: "text/csv" }));
+  link.download = "BorrowSmart_Inventory_Report.csv";
   link.click();
 }
 
 // ================= INIT =================
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", function () {
   updateUI();
   initSecretKey();
 
-  const btn = document.querySelector(".mobile-menu-btn");
-  const nav = document.querySelector(".mobile-nav");
-
-  if (btn && nav) {
-    btn.addEventListener("click", e => {
+  const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
+  const mobileNav = document.querySelector('.mobile-nav');
+  if (mobileMenuBtn && mobileNav) {
+    mobileMenuBtn.addEventListener('click', function (e) {
       e.stopPropagation();
-      nav.classList.toggle("active");
-      document.body.style.overflow = nav.classList.contains("active")
-        ? "hidden"
-        : "";
+      mobileNav.classList.toggle('active');
+      document.body.style.overflow = mobileNav.classList.contains('active') ? 'hidden' : '';
     });
-
-    document.addEventListener("click", e => {
-      if (!nav.contains(e.target) && !btn.contains(e.target)) {
-        nav.classList.remove("active");
-        document.body.style.overflow = "";
+    document.addEventListener('click', function (e) {
+      if (!mobileNav.contains(e.target) && !mobileMenuBtn.contains(e.target)) {
+        mobileNav.classList.remove('active');
+        document.body.style.overflow = '';
+      }
+    });
+    mobileNav.addEventListener('click', function (e) {
+      if (e.target.tagName === 'A') {
+        mobileNav.classList.remove('active');
+        document.body.style.overflow = '';
       }
     });
   }
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('animate-in'); });
+  });
+  const isMobile = window.innerWidth < 768;
+  document.querySelectorAll('.card, .stat-card, .team-card').forEach(el => {
+    if (!isMobile) observer.observe(el);
+    else el.classList.add('animate-in');
+  });
 });
