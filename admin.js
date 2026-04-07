@@ -163,19 +163,9 @@ async function loadAssets() {
       let lockEdit = asset.status === "Borrowed"
         ? "disabled style='opacity:0.4;pointer-events:none;'" : "";
 
-      // Show transaction date/time details in a single column
-      const tx = getTransactionDetails(asset);
-      const transactionDetails = [
-        tx.borrowedAt
-          ? `<div style="font-size:12px;color:#cbd5e1;">📤 Borrowed: ${formatTS(tx.borrowedAt)}</div>`
-          : "",
-        tx.returnedAt
-          ? `<div style="font-size:12px;color:#cbd5e1;">📥 Returned: ${formatTS(tx.returnedAt)}</div>`
-          : "",
-        !tx.borrowedAt && !tx.returnedAt && tx.lastTransaction
-          ? `<div style="font-size:12px;color:#cbd5e1;">🕒 Transaction: ${formatTS(tx.lastTransaction)}</div>`
-          : ""
-      ].filter(Boolean).join("") || "<span style='font-size:12px;color:#94a3b8;'>No transaction yet</span>";
+      const txValue = resolveTransactionDateTime(asset);
+      const formattedTx = formatTransactionDateTime(txValue);
+      const transactionDetails = `<span style='font-size:12px;color:#cbd5e1;'>${formattedTx}</span>`;
 
       html += `
         <tr>
@@ -204,66 +194,30 @@ async function loadAssets() {
   }
 }
 
-function formatTS(iso) {const d = parseDateValue(iso);
-  if (!d) return iso || "—";
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
-    + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+// TRansaction
+
+function resolveTransactionDateTime(asset) {
+  const transactionLog = JSON.parse(localStorage.getItem("assetTransactions") || "{}");
+  const localEntry = transactionLog[asset.id];
+
+  return (
+    asset.transactionDateTime ||
+    asset.transactionAt ||
+    asset.lastTransactionAt ||
+    asset.lastUpdated ||
+    asset.updatedAt ||
+    asset.borrowedAt ||
+    asset.returnedAt ||
+    localEntry?.dateTime ||
+    ""
+  );
 }
 
-function getTransactionDetails(asset) {
-  const dynamic = findTransactionLikeFields(asset);
-  return {
-    borrowedAt: firstValue(asset, ["borrowedAt", "borrowed_at", "borrowDate", "borrowedDate", "borrowed at"]) || dynamic.borrowedAt,
-    returnedAt: firstValue(asset, ["returnedAt", "returned_at", "returnDate", "returnedDate", "returned at"]) || dynamic.returnedAt,
-    lastTransaction: firstValue(asset, ["transactionAt", "transactionDateTime", "transaction time", "timestamp", "lastUpdated", "updatedAt"]) || dynamic.lastTransaction
-  };
-}
-
-function firstValue(obj, keys) {
-  for (const key of keys) {
-    if (obj && obj[key] !== undefined && obj[key] !== null && obj[key] !== "") return obj[key];
-  }
-  return "";
-}
-
-function parseDateValue(value) {
-  if (value === null || value === undefined || value === "") return null;
-  if (value instanceof Date && !isNaN(value.getTime())) return value;
-
-  // Support Google Sheets serial date numbers
-  if (typeof value === "number") {
-    const ms = Math.round((value - 25569) * 86400 * 1000);
-    const d = new Date(ms);
-    return isNaN(d.getTime()) ? null : d;
-  }
-
-  const d = new Date(value);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-function findTransactionLikeFields(asset) {
-  if (!asset || typeof asset !== "object") {
-    return { borrowedAt: "", returnedAt: "", lastTransaction: "" };
-  }
-
-  let borrowedAt = "";
-  let returnedAt = "";
-  let lastTransaction = "";
-
-  Object.entries(asset).forEach(([key, value]) => {
-    const keyName = String(key).toLowerCase().replace(/[_\s-]+/g, "");
-    if (value === null || value === undefined || value === "") return;
-
-    if (!borrowedAt && keyName.includes("borrow") && (keyName.includes("date") || keyName.includes("time") || keyName.includes("at"))) {
-      borrowedAt = value;
-    } else if (!returnedAt && keyName.includes("return") && (keyName.includes("date") || keyName.includes("time") || keyName.includes("at"))) {
-      returnedAt = value;
-    } else if (!lastTransaction && (keyName.includes("transaction") || keyName.includes("timestamp"))) {
-      lastTransaction = value;
-    }
-  });
-
-  return { borrowedAt, returnedAt, lastTransaction };
+function formatTransactionDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 // ================= DOWNLOAD QR =================
