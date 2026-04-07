@@ -23,6 +23,13 @@ function jsonpRequest(url, params) {
 }
 
 // ================= LOGIN & AUTH =================
+
+function setShopifyLoading(isLoading) {
+  if (window.shopify && typeof window.shopify.loading === "function") {
+    window.shopify.loading(isLoading);
+  }
+}
+
 function updateUI() {
   const isLoggedIn = localStorage.getItem("adminLoggedIn") === "true";
   const currentAdmin = JSON.parse(localStorage.getItem("currentAdmin") || "{}");
@@ -144,6 +151,7 @@ function initSecretKey() {
 
 // ================= LOAD ASSETS =================
 async function loadAssets() {
+  setShopifyLoading(true);
   try {
     const data = await jsonpRequest(CONFIG.API_URL, { action: "getAssets" });
     const body = document.getElementById("assetBody");
@@ -192,6 +200,8 @@ async function loadAssets() {
     document.getElementById("availableAssets").innerText = available;
   } catch (error) {
     console.error(error);
+  } finally {
+    setShopifyLoading(false);
   }
 }
 
@@ -241,6 +251,7 @@ function downloadQR(id, url) {
 // ================= EDIT =================
 function saveEdit(btn, id) {
   const row = btn.closest("tr");
+  setShopifyLoading(true);
   jsonpRequest(CONFIG.API_URL, {
     action: "editAsset",
     assetID: id,
@@ -249,15 +260,18 @@ function saveEdit(btn, id) {
     location: ""
   })
     .then(() => loadAssets())
-    .catch(() => alert("Edit failed"));
+    .catch(() => alert("Edit failed"))
+    .finally(() => setShopifyLoading(false));
 }
 
 // ================= DELETE =================
 function deleteAsset(id) {
   if (!confirm("Delete this asset?")) return;
+  setShopifyLoading(true);
   jsonpRequest(CONFIG.API_URL, { action: "deleteAsset", assetID: id })
     .then(() => loadAssets())
-    .catch(() => alert("Delete failed"));
+    .catch(() => alert("Delete failed"))
+    .finally(() => setShopifyLoading(false));
 }
 
 // ================= ADD ASSET =================
@@ -266,6 +280,7 @@ async function addAsset() {
   let category = document.getElementById("category").value.trim();
   if (!name) { alert("Name required"); return; }
 
+  setShopifyLoading(true);
   try {
     const assetID = await generateNextAssetID();
     const res = await fetch(CONFIG.API_URL, {
@@ -285,6 +300,8 @@ async function addAsset() {
   } catch (error) {
     console.error("Error adding asset:", error);
     alert("Failed to add asset");
+  } finally {
+    setShopifyLoading(false);
   }
 }
 
