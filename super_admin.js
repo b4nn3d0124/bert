@@ -22,20 +22,24 @@ function waitForConfig() {
 // ================= INITIALIZATION =================
 document.addEventListener('DOMContentLoaded', async function() {
   console.log('Super Admin page loaded');
-  
-  // Wait for CONFIG to be available
+
   const config = await waitForConfig();
-  console.log('CONFIG object after waiting:', config);
-  console.log('Admin API URL:', config.ADMIN_API_URL);
-  
-  // Check if CONFIG is properly loaded
+
   if (!config || !config.ADMIN_API_URL) {
-    console.error('CONFIG.ADMIN_API_URL is not defined');
-    showErrorPopup('Configuration Error', 'Admin API URL is not configured. Please check your config.js file.');
+    showErrorPopup('Configuration Error', 'Admin API URL is not configured.');
     return;
   }
-  
+
   loadAccounts();
+
+  // Mobile menu setup
+  const mobileBtn = document.querySelector('.mobile-menu-btn');
+  if (mobileBtn) {
+    mobileBtn.addEventListener('click', function() {
+      const nav = document.getElementById('mobileNav');
+      if (nav) nav.classList.toggle('active');
+    });
+  }
 });
 
 // ================= JSONP HELPER FUNCTION =================
@@ -501,14 +505,3 @@ function showWarningPopup(title, message) {
 function closeWarningPopup() {
   document.getElementById('warningPopup').classList.remove('active');
 }
-
-// ================= MOBILE MENU =================
-document.addEventListener('DOMContentLoaded', function() {
-  const mobileBtn = document.querySelector('.mobile-menu-btn');
-  if (mobileBtn) {
-    mobileBtn.addEventListener('click', function() {
-      const nav = document.getElementById('mobileNav');
-      if (nav) nav.classList.toggle('active');
-    });
-  }
-});
