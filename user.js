@@ -707,10 +707,11 @@ function formatTS(iso) {
 }
 
 function getTransactionDetails(asset) {
+  const dynamic = findTransactionLikeFields(asset);
   return {
-    borrowedAt: firstValue(asset, ["borrowedAt", "borrowed_at", "borrowDate", "borrowedDate"]),
-    returnedAt: firstValue(asset, ["returnedAt", "returned_at", "returnDate", "returnedDate"]),
-    lastTransaction: firstValue(asset, ["transactionAt", "transactionDateTime", "timestamp", "lastUpdated", "updatedAt"])
+    borrowedAt: firstValue(asset, ["borrowedAt", "borrowed_at", "borrowDate", "borrowedDate", "borrowed at"]) || dynamic.borrowedAt,
+    returnedAt: firstValue(asset, ["returnedAt", "returned_at", "returnDate", "returnedDate", "returned at"]) || dynamic.returnedAt,
+    lastTransaction: firstValue(asset, ["transactionAt", "transactionDateTime", "transaction time", "timestamp", "lastUpdated", "updatedAt"]) || dynamic.lastTransaction
   };
 }
 
@@ -732,8 +733,45 @@ function parseDateValue(value) {
     return isNaN(d.getTime()) ? null : d;
   }
 
-  const d = new Date(value);
+  const normalized = typeof value === "string" ? value.trim() : value;
+  const asNumber = typeof normalized === "string" ? Number(normalized) : normalized;
+  if (typeof asNumber === "number" && Number.isFinite(asNumber) && String(normalized).match(/^\d+(\.\d+)?$/)) {
+    const ms = Math.round((asNumber - 25569) * 86400 * 1000);
+    const dNum = new Date(ms);
+    if (!isNaN(dNum.getTime())) return dNum;
+  }
+
+  const d = new Date(normalized);
   return isNaN(d.getTime()) ? null : d;
+}
+
+function findTransactionLikeFields(asset) {
+  if (!asset || typeof asset !== "object") {
+    return { borrowedAt: "", returnedAt: "", lastTransaction: "" };
+  }
+
+  let borrowedAt = "";
+  let returnedAt = "";
+  let lastTransaction = "";
+
+  Object.entries(asset).forEach(([key, value]) => {
+    const keyName = String(key).toLowerCase().replace(/[_\s-]+/g, "");
+    if (value === null || value === undefined || value === "") return;
+
+    if (!borrowedAt && keyName.includes("borrow") && (keyName.includes("date") || keyName.includes("time") || keyName.includes("at"))) {
+      borrowedAt = value;
+    } else if (!returnedAt && keyName.includes("return") && (keyName.includes("date") || keyName.includes("time") || keyName.includes("at"))) {
+      returnedAt = value;
+    } else if (
+      !lastTransaction &&
+      (keyName.includes("transaction") || keyName.includes("timestamp") || keyName.includes("updated")) &&
+      (keyName.includes("date") || keyName.includes("time") || keyName.includes("at") || keyName.includes("stamp"))
+    ) {
+      lastTransaction = value;
+    }
+  });
+
+  return { borrowedAt, returnedAt, lastTransaction };
 }
 
 
