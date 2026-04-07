@@ -24,10 +24,68 @@ function jsonpRequest(url, params) {
 
 // ================= LOGIN & AUTH =================
 
+function ensureFallbackLoadingOverlay() {
+  let overlay = document.getElementById("fallbackLoadingOverlay");
+  if (overlay) return overlay;
+
+  overlay = document.createElement("div");
+  overlay.id = "fallbackLoadingOverlay";
+  overlay.innerHTML = '<div class="fallback-loading-spinner" aria-hidden="true"></div><p>Loading...</p>';
+
+  const style = document.createElement("style");
+  style.id = "fallbackLoadingOverlayStyle";
+  style.textContent = `
+    #fallbackLoadingOverlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+      background: rgba(10, 15, 25, 0.65);
+      color: #f8fafc;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      z-index: 99999;
+      backdrop-filter: blur(2px);
+    }
+
+    #fallbackLoadingOverlay.is-active {
+      display: flex;
+    }
+
+    #fallbackLoadingOverlay .fallback-loading-spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid rgba(255, 255, 255, 0.25);
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: fallbackSpin 0.8s linear infinite;
+    }
+
+    @keyframes fallbackSpin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  `;
+
+  if (!document.getElementById("fallbackLoadingOverlayStyle")) {
+    document.head.appendChild(style);
+  }
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
 function setShopifyLoading(isLoading) {
   if (window.shopify && typeof window.shopify.loading === "function") {
     window.shopify.loading(isLoading);
+    return;
   }
+
+  const overlay = ensureFallbackLoadingOverlay();
+  overlay.classList.toggle("is-active", Boolean(isLoading));
 }
 
 function updateUI() {
