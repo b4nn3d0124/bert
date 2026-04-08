@@ -1,4 +1,3 @@
-
 // ================= JSONP HELPER FUNCTION =================
 function jsonpRequest(url, params) {
   return new Promise((resolve, reject) => {
@@ -33,6 +32,8 @@ function ensureFallbackLoadingOverlay() {
   overlay.innerHTML = `
     <div class="fallback-loading-card">
       <div class="tenor-gif-embed" data-postid="14596258" data-share-method="host" data-aspect-ratio="0.965625" data-width="100%">
+        <a href="https://tenor.com/view/polskie-radio-disco-polo-polski-rock-duck-walking-gif-14596258"></a>
+        <a href="https://tenor.com/search/polskie+radio-stickers"></a>
       </div>
       <p>Loading...</p>
     </div>
@@ -268,7 +269,7 @@ async function loadAssets() {
             ${asset.qr ? `<img src="${asset.qr}" width="40" style="cursor:pointer" onclick="downloadQR('${asset.id}','${asset.qr}')">` : "—"}
           </td>
           <td>
-            <button onclick="saveEdit(this,'${asset.id}')" ${lockEdit}>💾</button>
+            <button id="addAssetBtn" ${lockEdit}></button>
             <button onclick="deleteAsset('${asset.id}')">🗑️</button>
           </td>
         </tr>
@@ -282,11 +283,22 @@ async function loadAssets() {
     console.error(error);
   } finally {
     setShopifyLoading(false);
+
+    // Initialize Lottie for Add Asset Button
+    const addBtn = document.getElementById("addAssetBtn");
+    if (addBtn) {
+      lottie.loadAnimation({
+        container: addBtn,
+        renderer: "svg",
+        loop: false,
+        autoplay: true,
+        path: "https://assets10.lottiefiles.com/packages/lf20_bb627177-0a2f-4ff2-8c4c-42bdcad66fb5.json"
+      });
+    }
   }
 }
 
-// TRansaction
-
+// ================= TRansaction =================
 function resolveTransactionDateTime(asset) {
   const transactionLog = JSON.parse(localStorage.getItem("assetTransactions") || "{}");
   const localEntry = transactionLog[asset.id];
@@ -432,6 +444,12 @@ function downloadCSV() {
 
 // ================= INIT =================
 document.addEventListener("DOMContentLoaded", function () {
+  // SESSION CHECK
+  if (!localStorage.getItem("adminLoggedIn")) {
+    document.getElementById("dashboardSection").style.display = "none";
+    document.getElementById("loginSection").style.display = "block";
+  }
+
   updateUI();
   initSecretKey();
 
@@ -465,4 +483,10 @@ document.addEventListener("DOMContentLoaded", function () {
     if (!isMobile) observer.observe(el);
     else el.classList.add('animate-in');
   });
+});
+
+// ================= AUTO LOGOUT ON PAGE CLOSE =================
+window.addEventListener("beforeunload", function() {
+    localStorage.removeItem("adminLoggedIn");
+    localStorage.removeItem("currentAdmin");
 });
