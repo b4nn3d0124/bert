@@ -732,7 +732,7 @@ button:hover::before {
 
 /* Preview image */
 #previewImage {
-  width: 100%;
+  width: 60%;
   border-radius: var(--radius-sm);
   margin-top: 10px;
   border: 1px solid var(--border);
