@@ -27,24 +27,42 @@ window.addEventListener("beforeunload", function() {
   localStorage.removeItem("currentAdmin");
 });
 
-// ============= LOTTIE ADD ASSET BUTTON =============
 function initAddAssetLottie() {
   const btn = document.getElementById("addAssetBtn");
   if (!btn) return;
 
-  // Clear default content
-  btn.innerHTML = "";
-  btn.style.padding = "0";
-  btn.style.width = "60px"; 
-  btn.style.height = "60px";
+  // Ensure button is positioned relative
+  btn.style.position = "relative";
+  btn.style.overflow = "hidden";
 
+  // Create Lottie container
+  const animContainer = document.createElement("div");
+  animContainer.style.position = "absolute";
+  animContainer.style.top = "0";
+  animContainer.style.left = "0";
+  animContainer.style.width = "100%";
+  animContainer.style.height = "100%";
+  animContainer.style.zIndex = "0";       // behind text
+  animContainer.style.pointerEvents = "none"; // clicks pass through
+  btn.prepend(animContainer);            // put behind the text
+
+  // Load Lottie animation
   lottie.loadAnimation({
-    container: btn,
+    container: animContainer,
     renderer: 'svg',
     loop: true,
     autoplay: true,
     path: "https://assets10.lottiefiles.com/packages/lf20_bb627177-0a2f-4ff2-8c4c-42bdcad66fb5.json"
   });
+
+  // Style text to be above animation
+  btn.style.color = "#ffffff";
+  btn.style.fontWeight = "600";
+  btn.style.fontSize = "16px";
+  btn.style.textAlign = "center";
+  btn.style.display = "flex";
+  btn.style.alignItems = "center";
+  btn.style.justifyContent = "center";
 }
 
 // ================= LOGIN & AUTH =================
