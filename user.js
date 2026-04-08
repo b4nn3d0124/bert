@@ -577,6 +577,15 @@ async function sendAction(action) {
     const result = await res.json();
     document.getElementById("status").innerText = result.message;
 
+    // ✅ AUTO SWITCH BUTTONS HERE
+    if (result.success) {
+      if (result.status) {
+        updateActionButtons(result.status);
+      } else {
+        updateActionButtons(action === "borrow" ? "borrowed" : "available");
+      }
+    }
+
     if (action === "borrow") {
       recordTransactionDateTime(scannedAsset, borrowedAt);
       sendEmailNotification({
@@ -597,7 +606,6 @@ async function sendAction(action) {
     setShopifyLoading(false);
   }
 }
-
 // ======================
 // POPUP SYSTEM
 // ======================
