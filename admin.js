@@ -21,8 +21,33 @@ function jsonpRequest(url, params) {
   });
 }
 
-// ================= LOGIN & AUTH =================
+// ============= AUTO LOGOUT ON PAGE CLOSE =============
+window.addEventListener("beforeunload", function() {
+  localStorage.removeItem("adminLoggedIn");
+  localStorage.removeItem("currentAdmin");
+});
 
+// ============= LOTTIE ADD ASSET BUTTON =============
+function initAddAssetLottie() {
+  const btn = document.getElementById("addAssetBtn");
+  if (!btn) return;
+
+  // Clear default content
+  btn.innerHTML = "";
+  btn.style.padding = "0";
+  btn.style.width = "60px"; 
+  btn.style.height = "60px";
+
+  lottie.loadAnimation({
+    container: btn,
+    renderer: 'svg',
+    loop: true,
+    autoplay: true,
+    path: "https://assets10.lottiefiles.com/packages/lf20_bb627177-0a2f-4ff2-8c4c-42bdcad66fb5.json"
+  });
+}
+
+// ================= LOGIN & AUTH =================
 function ensureFallbackLoadingOverlay() {
   let overlay = document.getElementById("fallbackLoadingOverlay");
   if (overlay) return overlay;
@@ -54,48 +79,22 @@ function ensureFallbackLoadingOverlay() {
       padding: 24px;
       box-sizing: border-box;
     }
-
-    #fallbackLoadingOverlay.is-active {
-      display: flex;
-    }
-
+    #fallbackLoadingOverlay.is-active { display: flex; }
     #fallbackLoadingOverlay .fallback-loading-card {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-      background: rgba(15, 23, 42, 0.88);
-      border: 1px solid rgba(148, 163, 184, 0.35);
-      border-radius: 16px;
-      padding: 14px 18px;
-      color: #f8fafc;
-      font-weight: 600;
-      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+      display: flex; flex-direction: column; align-items: center; gap: 12px;
+      background: rgba(15, 23, 42, 0.88); border: 1px solid rgba(148,163,184,0.35);
+      border-radius: 16px; padding: 14px 18px; color: #f8fafc;
+      font-weight: 600; box-shadow: 0 10px 28px rgba(0,0,0,0.45);
     }
-
-    #fallbackLoadingOverlay .tenor-gif-embed {
-      width: 100%;
-      max-width: 280px;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-
-    #fallbackLoadingOverlay p {
-      margin: 0;
-      letter-spacing: 0.02em;
-    }
+    #fallbackLoadingOverlay .tenor-gif-embed { width: 100%; max-width: 280px; border-radius: 12px; overflow: hidden; }
+    #fallbackLoadingOverlay p { margin: 0; letter-spacing: 0.02em; }
   `;
+  document.head.appendChild(style);
 
-  if (!document.getElementById("fallbackLoadingOverlayStyle")) {
-    document.head.appendChild(style);
-  }
-
-  if (!document.querySelector('script[src="https://tenor.com/embed.js"]')) {
-    const tenorScript = document.createElement("script");
-    tenorScript.src = "https://tenor.com/embed.js";
-    tenorScript.async = true;
-    document.head.appendChild(tenorScript);
-  }
+  const tenorScript = document.createElement("script");
+  tenorScript.src = "https://tenor.com/embed.js";
+  tenorScript.async = true;
+  document.head.appendChild(tenorScript);
 
   document.body.appendChild(overlay);
   return overlay;
@@ -106,7 +105,6 @@ function setShopifyLoading(isLoading) {
     window.shopify.loading(isLoading);
     return;
   }
-
   const overlay = ensureFallbackLoadingOverlay();
   overlay.classList.toggle("is-active", Boolean(isLoading));
 }
@@ -137,6 +135,7 @@ function updateUI() {
       <a href="#" onclick="logout()">Logout</a>
     `;
     mobileNav.innerHTML = nav.innerHTML;
+
     loadAssets();
   } else {
     loginSection.style.display = "block";
@@ -178,9 +177,6 @@ async function handleLogin(e) {
       localStorage.setItem("adminLoggedIn", "true");
       localStorage.setItem("currentAdmin", JSON.stringify(result.account));
       errorDiv.style.display = "none";
-
-      // FEATURE 1: Notify admin that admin page was accessed
-      notifyAdminAccess(user, result.account?.email || "");
 
       updateUI();
     } else {
