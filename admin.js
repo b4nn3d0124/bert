@@ -1,24 +1,58 @@
 
 // ================= JSONP HELPER FUNCTION =================
-function jsonpRequest(url, params) {
+function jsonpRequest(url, params = {}, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
-    const callbackName = 'jsonp_callback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
-    const jsonpUrl = url + (url.includes('?') ? '&' : '?') + 'callback=' + callbackName;
-    const paramString = new URLSearchParams(params).toString();
-    const fullUrl = jsonpUrl + (paramString ? '&' + paramString : '');
-    const script = document.createElement('script');
-    script.src = fullUrl;
-    window[callbackName] = function (data) {
-      delete window[callbackName];
+    const callbackName =
+      "jsonp_cb_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
+
+    // ✅ Fallback for URLSearchParams (better compatibility)
+    const paramString = Object.keys(params)
+      .map(
+        (k) =>
+          encodeURIComponent(k) + "=" + encodeURIComponent(params[k])
+      )
+      .join("&");
+
+    const fullUrl =
+      url +
+      (url.includes("?") ? "&" : "?") +
+      "callback=" +
+      callbackName +
+      (paramString ? "&" + paramString : "");
+
+    const script = document.createElement("script");
+
+    let timeout;
+
+    // ✅ Cleanup function (VERY IMPORTANT)
+    function cleanup() {
       if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+      if (timeout) clearTimeout(timeout);
+    }
+
+    // ✅ Define callback
+    window[callbackName] = function (data) {
+      cleanup();
       resolve(data);
     };
+
+    // ✅ Handle script error
     script.onerror = function () {
-      delete window[callbackName];
-      if (script.parentNode) script.parentNode.removeChild(script);
-      reject(new Error('JSONP request failed'));
+      cleanup();
+      reject(new Error("JSONP request failed"));
     };
-    document.body.appendChild(script);
+
+    // ✅ Timeout handling (prevents hanging)
+    timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("JSONP request timeout"));
+    }, timeoutMs);
+
+    script.src = fullUrl;
+
+    // ✅ Safe append (fix for Safari / mobile issues)
+    (document.body || document.head).appendChild(script);
   });
 }
 
