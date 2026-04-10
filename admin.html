@@ -299,20 +299,50 @@ function deleteCustomCategory(category) {
   }
 }
 
+function deleteDefaultCategory(category) {
+  if (confirm(`Are you sure you want to delete the default category "${category}"? This action cannot be undone.`)) {
+    // Move the default category to custom categories first
+    const defaultCategories = JSON.parse(localStorage.getItem('defaultCategories') || JSON.stringify(DEFAULT_CATEGORIES));
+    const index = defaultCategories.indexOf(category);
+    if (index > -1) {
+      defaultCategories.splice(index, 1);
+      localStorage.setItem('defaultCategories', JSON.stringify(defaultCategories));
+    }
+    
+    // Then add it to custom categories
+    const customCategories = getCustomCategories();
+    if (!customCategories.includes(category)) {
+      customCategories.push(category);
+      saveCustomCategories(customCategories);
+    }
+    
+    renderCategoryList();
+    
+    // Reset selection if deleted category was selected
+    if (document.getElementById('category').value === category) {
+      selectCategory('');
+    }
+  }
+}
+
 function renderCategoryList() {
   const categoryList = document.getElementById('categoryList');
   const selectedValue = document.getElementById('category').value;
   
+  // Get default categories from localStorage or use the constant
+  const defaultCategories = JSON.parse(localStorage.getItem('defaultCategories') || JSON.stringify(DEFAULT_CATEGORIES));
+  
   let html = '';
   
   // Default categories section
-  if (DEFAULT_CATEGORIES.length > 0) {
+  if (defaultCategories.length > 0) {
     html += `<div class="category-section-label">Default Categories</div>`;
-    DEFAULT_CATEGORIES.forEach(cat => {
+    defaultCategories.forEach(cat => {
       const isSelected = selectedValue === cat;
       html += `
         <div class="category-item default ${isSelected ? 'selected' : ''}" onclick="selectCategory('${cat}')">
           <span>${cat}</span>
+          <span class="delete-category" onclick="event.stopPropagation(); deleteDefaultCategory('${cat}')">✕</span>
         </div>
       `;
     });
