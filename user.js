@@ -270,6 +270,10 @@ function startScanner() {
 
     stopScanner();
 
+    setTimeout(() => {
+      startScanner();
+    }, 1200);
+
     try {
       const list = await fetch(CONFIG.API_URL + "?action=getAssets&nocache=" + Date.now())
         .then(r => r.json());
