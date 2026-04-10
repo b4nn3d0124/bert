@@ -18,6 +18,34 @@
 <link rel="stylesheet" href="style.css">
 <script src="config.js"></script>
 <script src="admin2.js" defer></script>
+<style>
+  .category-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 13px;
+    color: inherit;
+  }
+  .category-tag-delete {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: rgba(255,255,255,0.5);
+    font-size: 16px;
+    padding: 0;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    transition: color 0.15s;
+  }
+  .category-tag-delete:hover {
+    color: #ff4fa3;
+  }
+</style>
 </head>
 
 <body>
@@ -107,6 +135,8 @@
                 <option value="Tools">Tools</option>
                 <option value="Others">Others</option>
               </select>
+              <!-- Custom category tags appear here -->
+              <div id="categoryTagList" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;"></div>
             </div>
           </div>
           <div id="customCategoryDiv" class="form-group" style="display:none; margin-top:16px;">
@@ -158,21 +188,6 @@ window.addEventListener("beforeunload", function() {
   localStorage.removeItem("adminLoggedIn");
   localStorage.removeItem("currentAdmin");
 });
-
-// ================= Category Change Handler =================
-function handleCategoryChange(value) {
-  const customCategoryDiv = document.getElementById('customCategoryDiv');
-  const customCategoryInput = document.getElementById('customCategory');
-  
-  if (value === 'Others') {
-    customCategoryDiv.style.display = 'block';
-    customCategoryInput.required = true;
-  } else {
-    customCategoryDiv.style.display = 'none';
-    customCategoryInput.required = false;
-    customCategoryInput.value = '';
-  }
-}
 </script>
 </body>
 </html>
