@@ -1,5 +1,5 @@
 // =============================================================
-// admin.js  —  BorrowSmart Admin Frontend
+// admin2.js  —  BorrowSmart Admin Frontend
 //
 // Architecture:
 //   GET  → doGet()  in GAS — for reads (getAssets, authenticate, etc.)
@@ -26,8 +26,6 @@ async function apiGet(baseUrl, params = {}, timeoutMs = 12000) {
     const res = await fetch(url.toString(), {
       method: "GET",
       signal: controller.signal,
-      // No explicit mode — browser default is "cors", which is correct.
-      // GAS will respond with Access-Control-Allow-Origin: *
     });
     clearTimeout(timer);
 
@@ -352,8 +350,6 @@ function esc(str) {
 }
 
 // ─── QR DOWNLOAD ─────────────────────────────────────────────
-// api.qrserver.com supports CORS — draw to canvas → Blob → download.
-// Falls back to window.open if canvas is blocked (should not happen).
 
 function downloadQR(id, url) {
   const img   = new Image();
@@ -382,7 +378,6 @@ function downloadQR(id, url) {
   };
 
   img.onerror = () => window.open(url, "_blank");
-  // Cache-bust prevents a previously-cached opaque response from tainting the canvas
   img.src = url + (url.includes("?") ? "&" : "?") + "_t=" + Date.now();
 }
 
@@ -415,15 +410,15 @@ function deleteAsset(id) {
 }
 
 async function addAsset() {
-  const name     = document.getElementById("assetName").value.trim();
-  const category = document.getElementById("category").value.trim();
+  const name           = document.getElementById("assetName").value.trim();
+  const category       = document.getElementById("category").value.trim();
   const customCategory = document.getElementById("customCategory")?.value.trim() || "";
 
   if (!name) { alert("Asset name is required."); return; }
 
-  // Use custom category if "Others" is selected and custom category is provided
+  // Use custom category if "Others" is selected
   let finalCategory = category;
-  if (category === 'Others') {
+  if (category === "Others") {
     if (!customCategory) {
       alert("Please enter a custom category name.");
       return;
@@ -436,9 +431,9 @@ async function addAsset() {
     const assetID = await generateNextAssetID();
     const result  = await apiPost(CONFIG.API_URL, {
       action: "addAsset",
-      assetID, 
-      name, 
-      category: finalCategory, 
+      assetID,
+      name,
+      category: finalCategory,
       location: "",
     });
 
@@ -447,15 +442,20 @@ async function addAsset() {
       (result?.message || "").toLowerCase().includes("success");
 
     if (ok) {
+      // If a custom category was entered, add it to the dropdown
+      if (category === "Others" && customCategory) {
+        addCustomCategoryToDropdown(customCategory);
+      }
+
       generateQRPreview(assetID);
       alert("Asset added: " + assetID);
       loadAssets();
+
       const form = document.getElementById("addAssetForm");
       if (form) {
         form.reset();
-        // Hide custom category input after reset
         const customDiv = document.getElementById("customCategoryDiv");
-        if (customDiv) customDiv.style.display = 'none';
+        if (customDiv) customDiv.style.display = "none";
       }
     } else {
       alert(result?.error || result?.message || "Failed to add asset.");
@@ -468,21 +468,127 @@ async function addAsset() {
   }
 }
 
-// ─── CATEGORY HANDLER ─────────────────────────────────────────────
-// NEW: Function to handle category dropdown change
+// ─── CATEGORY MANAGEMENT ──────────────────────────────────────
+
+// Tracks all user-added custom categories for this session
+const customCategories = [];
+
+/**
+ * Shows/hides the custom category text input depending on
+ * whether the user selected "Others" from the dropdown.
+ */
 function handleCategoryChange(value) {
-  const customCategoryDiv = document.getElementById('customCategoryDiv');
-  const customCategoryInput = document.getElementById('customCategory');
-  
-  if (value === 'Others') {
-    customCategoryDiv.style.display = 'block';
-    customCategoryInput.required = true;
+  const customCategoryDiv   = document.getElementById("customCategoryDiv");
+  const customCategoryInput = document.getElementById("customCategory");
+
+  if (value === "Others") {
+    customCategoryDiv.style.display   = "block";
+    customCategoryInput.required      = true;
   } else {
-    customCategoryDiv.style.display = 'none';
-    customCategoryInput.required = false;
-    customCategoryInput.value = '';
+    customCategoryDiv.style.display   = "none";
+    customCategoryInput.required      = false;
+    customCategoryInput.value         = "";
   }
 }
+
+/**
+ * Inserts a new <option> into the category dropdown (before "Others")
+ * and renders a deletable tag pill below the dropdown.
+ * Skips duplicates silently.
+ */
+function addCustomCategoryToDropdown(categoryName) {
+  const select = document.getElementById("category");
+  if (!select) return;
+
+  // Skip if already exists in the dropdown
+  const alreadyExists = Array.from(select.options).some(
+    (o) => o.value === categoryName
+  );
+  if (alreadyExists) return;
+
+  // Insert the new option just before "Others"
+  const othersOption = Array.from(select.options).find(
+    (o) => o.value === "Others"
+  );
+  const newOption = new Option(categoryName, categoryName);
+  if (othersOption) {
+    select.insertBefore(newOption, othersOption);
+  } else {
+    select.appendChild(newOption);
+  }
+
+  // Track in our custom list and refresh the tag pills
+  customCategories.push(categoryName);
+  renderCategoryTags();
+
+  // Auto-select the newly added category
+  select.value = categoryName;
+  handleCategoryChange(categoryName);
+}
+
+/**
+ * Re-renders the row of deletable tag pills beneath the dropdown.
+ * Only custom categories (not built-ins) appear here.
+ */
+function renderCategoryTags() {
+  const tagList = document.getElementById("categoryTagList");
+  if (!tagList) return;
+
+  if (customCategories.length === 0) {
+    tagList.innerHTML = "";
+    return;
+  }
+
+  tagList.innerHTML = customCategories
+    .map(
+      (cat) => `
+        <span class="category-tag">
+          ${esc(cat)}
+          <button
+            type="button"
+            class="category-tag-delete"
+            onclick="promptDeleteCategory('${esc(cat)}')"
+            title="Delete category"
+          >&times;</button>
+        </span>`
+    )
+    .join("");
+}
+
+/**
+ * Shows a confirmation dialog, then removes the category from
+ * both the dropdown and the tag list if the user confirms.
+ */
+function promptDeleteCategory(categoryName) {
+  const confirmed = confirm(
+    `Do you want to delete the category "${categoryName}"?\n\nThis will only remove it from the dropdown. Existing assets with this category will not be affected.`
+  );
+  if (!confirmed) return;
+
+  // Remove the <option> from the dropdown
+  const select = document.getElementById("category");
+  if (select) {
+    const option = Array.from(select.options).find(
+      (o) => o.value === categoryName
+    );
+    if (option) select.removeChild(option);
+
+    // If this category was currently selected, reset the dropdown
+    if (select.value === categoryName) {
+      select.value = "";
+      handleCategoryChange("");
+    }
+  }
+
+  // Remove from the in-memory list
+  const idx = customCategories.indexOf(categoryName);
+  if (idx !== -1) customCategories.splice(idx, 1);
+
+  // Re-render the tag pills
+  renderCategoryTags();
+}
+
+// ─── ASSET ID GENERATOR ───────────────────────────────────────
 
 async function generateNextAssetID() {
   try {
