@@ -469,7 +469,7 @@ async function addAsset() {
 }
 
 // ─── CATEGORY HANDLER ─────────────────────────────────────────────
-// Modified: Function to handle category dropdown change
+// NEW: Function to handle category dropdown change
 function handleCategoryChange(value) {
   const customCategoryDiv = document.getElementById('customCategoryDiv');
   const customCategoryInput = document.getElementById('customCategory');
@@ -477,7 +477,6 @@ function handleCategoryChange(value) {
   if (value === 'Others') {
     customCategoryDiv.style.display = 'block';
     customCategoryInput.required = true;
-    customCategoryInput.focus();
   } else {
     customCategoryDiv.style.display = 'none';
     customCategoryInput.required = false;
@@ -485,73 +484,22 @@ function handleCategoryChange(value) {
   }
 }
 
-// Modified addAsset function to save custom categories
-async function addAsset() {
-  const name     = document.getElementById("assetName").value.trim();
-  const category = document.getElementById("category").value.trim();
-  const customCategory = document.getElementById("customCategory")?.value.trim() || "";
-
-  if (!name) { alert("Asset name is required."); return; }
-  if (!category) { alert("Please select a category."); return; }
-
-  // Use custom category if "Others" is selected and custom category is provided
-  let finalCategory = category;
-  if (category === 'Others') {
-    if (!customCategory) {
-      alert("Please enter a custom category name.");
-      return;
-    }
-    finalCategory = customCategory;
-    // Save the new custom category
-    addCustomCategory(finalCategory);
-  }
-
-  setLoading(true);
+async function generateNextAssetID() {
   try {
-    const assetID = await generateNextAssetID();
-    const result  = await apiPost(CONFIG.API_URL, {
-      action: "addAsset",
-      assetID, 
-      name, 
-      category: finalCategory, 
-      location: "",
-    });
+    const data  = await apiGet(CONFIG.API_URL, { action: "getAssets" });
+    const items = Array.isArray(data) ? data : [];
+    if (!items.length) return "AST-001";
 
-    const ok =
-      result?.success === true ||
-      (result?.message || "").toLowerCase().includes("success");
-
-    if (ok) {
-      generateQRPreview(assetID);
-      alert("Asset added: " + assetID);
-      loadAssets();
-      const form = document.getElementById("addAssetForm");
-      if (form) {
-        form.reset();
-        // Reset category selection
-        selectCategory('');
-        // Hide custom category input
-        const customDiv = document.getElementById("customCategoryDiv");
-        if (customDiv) customDiv.style.display = 'none';
-      }
-    } else {
-      alert(result?.error || result?.message || "Failed to add asset.");
-    }
-  } catch (err) {
-    console.error("[addAsset]", err);
-    alert("Failed to add asset: " + err.message);
-  } finally {
-    setLoading(false);
-  }
-}
-
-// Add these helper functions at the end of the file (before INIT section)
-function addCustomCategory(category) {
-  const customCategories = getCustomCategories();
-  if (!customCategories.includes(category) && !DEFAULT_CATEGORIES.includes(category)) {
-    customCategories.push(category);
-    saveCustomCategories(customCategories);
-    renderCategoryList();
+    const max = Math.max(
+      0,
+      ...items.map((a) => {
+        const m = (a.id || "").match(/AST-(\d+)/);
+        return m ? parseInt(m[1], 10) : 0;
+      })
+    );
+    return "AST-" + String(max + 1).padStart(3, "0");
+  } catch {
+    return "AST-" + Date.now();
   }
 }
 
