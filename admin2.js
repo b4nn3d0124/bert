@@ -529,7 +529,7 @@ function addCustomCategoryToDropdown(categoryName) {
 /**
  * Re-renders the row of deletable tag pills beneath the dropdown.
  * Only custom categories (not built-ins) appear here.
- */
+ 
 function renderCategoryTags() {
   const tagList = document.getElementById("categoryTagList");
   if (!tagList) return;
@@ -558,7 +558,7 @@ function renderCategoryTags() {
 /**
  * Shows a confirmation dialog, then removes the category from
  * both the dropdown and the tag list if the user confirms.
- */
+ 
 function promptDeleteCategory(categoryName) {
   const confirmed = confirm(
     `Do you want to delete the category "${categoryName}"?\n\nThis will only remove it from the dropdown. Existing assets with this category will not be affected.`
@@ -586,7 +586,7 @@ function promptDeleteCategory(categoryName) {
 
   // Re-render the tag pills
   renderCategoryTags();
-}
+} **/
 
 // ─── ASSET ID GENERATOR ───────────────────────────────────────
 
