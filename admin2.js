@@ -1,254 +1,236 @@
-// ================= JSONP HELPER FUNCTION =================
-function jsonpRequest(url, params = {}, timeoutMs = 10000) {
-  return new Promise((resolve, reject) => {
-    const callbackName =
-      "jsonp_cb_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
+// =============================================================
+// admin.js  —  BorrowSmart Admin Frontend
+//
+// Architecture:
+//   GET  → doGet()  in GAS — for reads (getAssets, authenticate, etc.)
+//   POST → doPost() in GAS — for writes (addAsset, editAsset, deleteAsset)
+//
+// No JSONP. No mode:"no-cors". Standard fetch() everywhere.
+// GAS backend sends Access-Control-Allow-Origin:* on every response.
+// =============================================================
 
-    const paramString = Object.keys(params)
-      .map(
-        (k) => encodeURIComponent(k) + "=" + encodeURIComponent(params[k])
-      )
-      .join("&");
+// ─── API HELPERS ─────────────────────────────────────────────
 
-    const fullUrl =
-      url +
-      (url.includes("?") ? "&" : "?") +
-      "callback=" +
-      callbackName +
-      (paramString ? "&" + paramString : "");
+/**
+ * GET — appends params to the URL and fetches JSON.
+ * Used for all read operations.
+ */
+async function apiGet(baseUrl, params = {}, timeoutMs = 12000) {
+  const url = new URL(baseUrl);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
 
-    const script = document.createElement("script");
-    let timeout;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    function cleanup() {
-      if (script.parentNode) script.parentNode.removeChild(script);
-      delete window[callbackName];
-      if (timeout) clearTimeout(timeout);
-    }
+  try {
+    const res = await fetch(url.toString(), {
+      method: "GET",
+      signal: controller.signal,
+      // No explicit mode — browser default is "cors", which is correct.
+      // GAS will respond with Access-Control-Allow-Origin: *
+    });
+    clearTimeout(timer);
 
-    window[callbackName] = function (data) {
-      cleanup();
-      resolve(data);
-    };
-
-    script.onerror = function () {
-      cleanup();
-      reject(new Error("JSONP request failed"));
-    };
-
-    timeout = setTimeout(() => {
-      cleanup();
-      reject(new Error("JSONP request timeout"));
-    }, timeoutMs);
-
-    script.src = fullUrl;
-    (document.body || document.head).appendChild(script);
-  });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return safeParseJson(await res.text());
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === "AbortError")
+      throw new Error("Request timed out (" + timeoutMs / 1000 + "s)");
+    throw err;
+  }
 }
 
-// ================= LOGIN & AUTH =================
+/**
+ * POST — sends a JSON body.
+ * Used for all write operations (add, edit, delete).
+ * Handled by doPost() in GAS.
+ */
+async function apiPost(baseUrl, body = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(baseUrl, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return safeParseJson(await res.text());
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === "AbortError")
+      throw new Error("Request timed out (" + timeoutMs / 1000 + "s)");
+    throw err;
+  }
+}
+
+/** Safely parse JSON — GAS occasionally adds a )]}' XSS guard prefix */
+function safeParseJson(text) {
+  const clean = (text || "").trim().replace(/^\)\]\}'/, "").trim();
+  try {
+    return JSON.parse(clean);
+  } catch {
+    throw new Error("Server returned invalid JSON: " + clean.slice(0, 150));
+  }
+}
+
+// ─── LOADING OVERLAY ─────────────────────────────────────────
 
 function ensureFallbackLoadingOverlay() {
-  let overlay = document.getElementById("fallbackLoadingOverlay");
-  if (overlay) return overlay;
+  if (document.getElementById("fallbackLoadingOverlay"))
+    return document.getElementById("fallbackLoadingOverlay");
 
-  overlay = document.createElement("div");
+  const overlay = document.createElement("div");
   overlay.id = "fallbackLoadingOverlay";
   overlay.innerHTML = `
     <div class="fallback-loading-card">
-      <div class="tenor-gif-embed" data-postid="14596258" data-share-method="host" data-aspect-ratio="0.965625" data-width="100%">
+      <div class="tenor-gif-embed" data-postid="14596258"
+           data-share-method="host" data-aspect-ratio="0.965625" data-width="100%">
         <a href="https://tenor.com/view/polskie-radio-disco-polo-polski-rock-duck-walking-gif-14596258"></a>
-        <a href="https://tenor.com/search/polskie+radio-stickers"></a>
       </div>
-      <p>Loading...</p>
-    </div>
-  `;
-
-  const style = document.createElement("style");
-  style.id = "fallbackLoadingOverlayStyle";
-  style.textContent = `
-    #fallbackLoadingOverlay {
-      position: fixed;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(10, 15, 25, 0.65);
-      z-index: 99999;
-      backdrop-filter: blur(2px);
-      padding: 24px;
-      box-sizing: border-box;
-    }
-    #fallbackLoadingOverlay.is-active {
-      display: flex;
-    }
-    #fallbackLoadingOverlay .fallback-loading-card {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-      background: rgba(15, 23, 42, 0.88);
-      border: 1px solid rgba(148, 163, 184, 0.35);
-      border-radius: 16px;
-      padding: 14px 18px;
-      color: #f8fafc;
-      font-weight: 600;
-      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
-    }
-    #fallbackLoadingOverlay .tenor-gif-embed {
-      width: 100%;
-      max-width: 280px;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    #fallbackLoadingOverlay p {
-      margin: 0;
-      letter-spacing: 0.02em;
-    }
-  `;
+      <p>Loading…</p>
+    </div>`;
 
   if (!document.getElementById("fallbackLoadingOverlayStyle")) {
+    const style = document.createElement("style");
+    style.id = "fallbackLoadingOverlayStyle";
+    style.textContent = `
+      #fallbackLoadingOverlay{position:fixed;inset:0;display:none;align-items:center;
+        justify-content:center;background:rgba(10,15,25,.65);z-index:99999;
+        backdrop-filter:blur(2px);padding:24px;box-sizing:border-box}
+      #fallbackLoadingOverlay.is-active{display:flex}
+      #fallbackLoadingOverlay .fallback-loading-card{display:flex;flex-direction:column;
+        align-items:center;gap:12px;background:rgba(15,23,42,.88);
+        border:1px solid rgba(148,163,184,.35);border-radius:16px;
+        padding:14px 18px;color:#f8fafc;font-weight:600;
+        box-shadow:0 10px 28px rgba(0,0,0,.45)}
+      #fallbackLoadingOverlay .tenor-gif-embed{width:100%;max-width:280px;
+        border-radius:12px;overflow:hidden}
+      #fallbackLoadingOverlay p{margin:0;letter-spacing:.02em}`;
     document.head.appendChild(style);
   }
 
   if (!document.querySelector('script[src="https://tenor.com/embed.js"]')) {
-    const tenorScript = document.createElement("script");
-    tenorScript.src = "https://tenor.com/embed.js";
-    tenorScript.async = true;
-    document.head.appendChild(tenorScript);
+    const s = document.createElement("script");
+    s.src = "https://tenor.com/embed.js";
+    s.async = true;
+    document.head.appendChild(s);
   }
 
   document.body.appendChild(overlay);
   return overlay;
 }
 
-function setShopifyLoading(isLoading) {
+function setLoading(active) {
   if (window.shopify && typeof window.shopify.loading === "function") {
-    window.shopify.loading(isLoading);
+    window.shopify.loading(active);
     return;
   }
-  const overlay = ensureFallbackLoadingOverlay();
-  overlay.classList.toggle("is-active", Boolean(isLoading));
+  ensureFallbackLoadingOverlay().classList.toggle("is-active", Boolean(active));
 }
 
+// ─── UI STATE ─────────────────────────────────────────────────
+
 function updateUI() {
-  const isLoggedIn = localStorage.getItem("adminLoggedIn") === "true";
-  const currentAdmin = JSON.parse(localStorage.getItem("currentAdmin") || "{}");
+  const loggedIn = localStorage.getItem("adminLoggedIn") === "true";
+  const admin = JSON.parse(localStorage.getItem("currentAdmin") || "{}");
 
-  const nav = document.getElementById("mainNav");
-  const mobileNav = document.getElementById("mobileNav");
-  const loginSection = document.getElementById("loginSection");
-  const dashboardSection = document.getElementById("dashboardSection");
+  const nav           = document.getElementById("mainNav");
+  const mobileNav     = document.getElementById("mobileNav");
+  const loginSection  = document.getElementById("loginSection");
+  const dashSection   = document.getElementById("dashboardSection");
 
-  if (!nav || !mobileNav || !loginSection || !dashboardSection) return;
+  if (!nav || !mobileNav || !loginSection || !dashSection) return;
 
-  if (isLoggedIn) {
-    loginSection.style.display = "none";
-    dashboardSection.style.display = "block";
+  if (loggedIn) {
+    loginSection.style.display  = "none";
+    dashSection.style.display   = "block";
 
-    const formattedUsername = currentAdmin.username
-      ? currentAdmin.username.charAt(0).toUpperCase() + currentAdmin.username.slice(1)
+    const displayName = admin.username
+      ? admin.username.charAt(0).toUpperCase() + admin.username.slice(1)
       : "Admin";
 
-    nav.innerHTML = `
+    const links = `
       <a href="index.html">User Page</a>
-      <a href="#" class="nav-admin">${formattedUsername}</a>
+      <a href="#" class="nav-admin">${displayName}</a>
       <a href="about.html">About</a>
-      <a href="#" onclick="logout()">Logout</a>
-    `;
-    mobileNav.innerHTML = nav.innerHTML;
+      <a href="#" onclick="logout()">Logout</a>`;
+
+    nav.innerHTML = mobileNav.innerHTML = links;
     loadAssets();
   } else {
     loginSection.style.display = "block";
-    dashboardSection.style.display = "none";
-    nav.innerHTML = `
+    dashSection.style.display  = "none";
+
+    const links = `
       <a href="index.html">User Page</a>
       <a href="about.html">About</a>
-      <a href="#">Admin</a>
-    `;
-    mobileNav.innerHTML = nav.innerHTML;
+      <a href="#">Admin</a>`;
+
+    nav.innerHTML = mobileNav.innerHTML = links;
   }
 }
 
-// ================= LOGIN =================
+// ─── LOGIN ────────────────────────────────────────────────────
+
 async function handleLogin(e) {
   e.preventDefault();
 
-  const user = document.getElementById("username").value.trim();
-  const pass = document.getElementById("password").value.trim();
+  const user     = document.getElementById("username").value.trim();
+  const pass     = document.getElementById("password").value.trim();
   const errorDiv = document.getElementById("loginError");
 
   if (!user || !pass) {
-    errorDiv.textContent = "Username and password are required";
-    errorDiv.style.display = "block";
+    showLoginError(errorDiv, "Username and password are required.");
     return;
   }
 
-  try {
-    errorDiv.textContent = "Authentication...";
-    errorDiv.style.display = "block";
+  showLoginError(errorDiv, "Authenticating…");
 
-    const result = await jsonpRequest(CONFIG.ADMIN_API_URL, {
-      action: "authenticate",
+  try {
+    const result = await apiGet(CONFIG.ADMIN_API_URL, {
+      action:   "authenticate",
       username: user,
       password: pass,
     });
 
-    if (result.success) {
+    if (result && result.success) {
       localStorage.setItem("adminLoggedIn", "true");
       localStorage.setItem("currentAdmin", JSON.stringify(result.account));
       errorDiv.style.display = "none";
-
-      // FEATURE 1: Notify admin that admin page was accessed
-      notifyAdminAccess(user, result.account?.email || "");
-
+      notifyAdminAccess(user);
       updateUI();
     } else {
-      errorDiv.textContent = result.error || "Invalid credentials";
-      errorDiv.style.display = "block";
+      showLoginError(errorDiv, (result && result.error) || "Invalid credentials.");
     }
-  } catch (error) {
-    console.error(error);
-    errorDiv.textContent = "Authentication failed.";
-    errorDiv.style.display = "block";
+  } catch (err) {
+    console.error("[Login]", err);
+    showLoginError(errorDiv, "Authentication failed — " + err.message);
   }
 }
 
-// FEATURE 1: Notify via JSONP (no-CORS, fire-and-forget)
-function notifyAdminAccess(username, adminEmail) {
-  try {
-    const notifyEmail = localStorage.getItem("bs_notify_email") || "";
-    if (!notifyEmail) return;
+function showLoginError(el, msg) {
+  if (!el) return;
+  el.textContent    = msg;
+  el.style.display  = "block";
+}
 
-    const subject = encodeURIComponent("[BorrowSmart] Admin Login: " + username);
-    const body = encodeURIComponent(
-      'Admin account "' + username + '" logged into the admin dashboard at ' + new Date().toLocaleString() + "."
-    );
+/** Fire-and-forget access notification — errors are non-fatal */
+function notifyAdminAccess(username) {
+  const notifyEmail = localStorage.getItem("bs_notify_email") || "";
+  if (!notifyEmail) return;
 
-    // Fire-and-forget JSONP notification — no callback needed
-    const callbackName = "notify_cb_" + Date.now();
-    window[callbackName] = function () {
-      delete window[callbackName];
-    };
-
-    const url =
-      CONFIG.ADMIN_API_URL +
-      "?action=sendNotificationEmail" +
-      "&to=" + encodeURIComponent(notifyEmail) +
-      "&subject=" + subject +
-      "&body=" + body +
-      "&callback=" + callbackName;
-
-    const script = document.createElement("script");
-    script.src = url;
-    script.onerror = function () {
-      if (script.parentNode) script.parentNode.removeChild(script);
-      delete window[callbackName];
-    };
-    (document.body || document.head).appendChild(script);
-  } catch (e) {
-    console.warn("Notify failed:", e);
-  }
+  apiGet(CONFIG.ADMIN_API_URL, {
+    action:  "sendNotificationEmail",
+    to:      notifyEmail,
+    subject: "[BorrowSmart] Admin Login: " + username,
+    body:    'Admin "' + username + '" logged in at ' + new Date().toLocaleString() + ".",
+  }).catch((err) => console.warn("[Notify]", err));
 }
 
 function logout() {
@@ -257,292 +239,302 @@ function logout() {
   updateUI();
 }
 
-// ================= SECRET KEY =================
-let keySequence = [];
-const secretKey = "@";
+// ─── SECRET KEY ───────────────────────────────────────────────
+
+let _keySeq   = [];
+const _secret = "@";
 
 function initSecretKey() {
-  document.addEventListener("keydown", function (event) {
+  document.addEventListener("keydown", (e) => {
     const dash = document.getElementById("dashboardSection");
-    if (dash && dash.style.display !== "none") {
-      keySequence.push(event.key);
-      if (keySequence.length > secretKey.length) keySequence.shift();
-      if (keySequence.join("") === secretKey) {
-        window.location.href = "super_admin.html";
-        keySequence = [];
-      }
+    if (!dash || dash.style.display === "none") return;
+    _keySeq.push(e.key);
+    if (_keySeq.length > _secret.length) _keySeq.shift();
+    if (_keySeq.join("") === _secret) {
+      window.location.href = "super_admin.html";
+      _keySeq = [];
     }
   });
 }
 
-// ================= LOAD ASSETS =================
+// ─── LOAD ASSETS ─────────────────────────────────────────────
+
 async function loadAssets() {
-  setShopifyLoading(true);
+  setLoading(true);
   try {
-    const data = await jsonpRequest(CONFIG.API_URL, { action: "getAssets" });
+    const data = await apiGet(CONFIG.API_URL, { action: "getAssets" });
     const body = document.getElementById("assetBody");
     if (!body) return;
 
-    let html = "";
-    let borrowed = 0;
-    let available = 0;
+    const assets = Array.isArray(data) ? data : [];
+    let html = "", borrowed = 0, available = 0;
 
-    data.forEach((asset) => {
-      if (asset.status === "Borrowed") borrowed++;
+    assets.forEach((asset) => {
+      if (asset.status === "Borrowed")  borrowed++;
       if (asset.status === "Available") available++;
 
-      let statusClass = "badge";
-      if (asset.status === "Available") statusClass += " badge-green";
-      else if (asset.status === "Borrowed") statusClass += " badge-red";
+      const badge =
+        asset.status === "Available" ? "badge badge-green" :
+        asset.status === "Borrowed"  ? "badge badge-red"   : "badge";
 
-      let lockEdit =
+      const locked =
         asset.status === "Borrowed"
-          ? "disabled style='opacity:0.4;pointer-events:none;'"
+          ? "disabled style='opacity:.4;pointer-events:none'"
           : "";
 
-      const txValue = resolveTransactionDateTime(asset);
-      const formattedTx = formatTransactionDateTime(txValue);
-      const transactionDetails = `<span style='font-size:12px;color:#cbd5e1;'>${formattedTx}</span>`;
+      const txFormatted = formatDateTime(resolveTransactionDate(asset));
 
       html += `
         <tr>
-          <td>${asset.id}</td>
-          <td contenteditable="true">${asset.name}</td>
-          <td contenteditable="true">${asset.category || ""}</td>
-          <td><span class="${statusClass}">${asset.status}</span></td>
-          <td>${asset.holder || ""}</td>
-          <td>${transactionDetails}</td>
+          <td>${esc(asset.id)}</td>
+          <td contenteditable="true">${esc(asset.name)}</td>
+          <td contenteditable="true">${esc(asset.category || "")}</td>
+          <td><span class="${badge}">${esc(asset.status)}</span></td>
+          <td>${esc(asset.holder || "")}</td>
+          <td><span style="font-size:12px;color:#cbd5e1">${txFormatted}</span></td>
+          <td>${asset.qr
+            ? `<img src="${esc(asset.qr)}" width="40" style="cursor:pointer"
+                    onclick="downloadQR('${esc(asset.id)}','${esc(asset.qr)}')">`
+            : "—"
+          }</td>
           <td>
-            ${
-              asset.qr
-                ? `<img src="${asset.qr}" width="40" style="cursor:pointer" onclick="downloadQR('${asset.id}','${asset.qr}')">`
-                : "—"
-            }
+            <button onclick="saveEdit(this,'${esc(asset.id)}')" ${locked}>💾</button>
+            <button onclick="deleteAsset('${esc(asset.id)}')">🗑️</button>
           </td>
-          <td>
-            <button onclick="saveEdit(this,'${asset.id}')" ${lockEdit}>💾</button>
-            <button onclick="deleteAsset('${asset.id}')">🗑️</button>
-          </td>
-        </tr>
-      `;
+        </tr>`;
     });
 
     body.innerHTML = html;
-    document.getElementById("borrowedAssets").innerText = borrowed;
-    document.getElementById("availableAssets").innerText = available;
-  } catch (error) {
-    console.error(error);
+    safeSet("borrowedAssets",  borrowed);
+    safeSet("availableAssets", available);
+  } catch (err) {
+    console.error("[loadAssets]", err);
+    alert("Failed to load assets: " + err.message);
   } finally {
-    setShopifyLoading(false);
+    setLoading(false);
   }
 }
 
-// ================= TRANSACTION HELPERS =================
-function resolveTransactionDateTime(asset) {
-  const transactionLog = JSON.parse(
-    localStorage.getItem("assetTransactions") || "{}"
-  );
-  const localEntry = transactionLog[asset.id];
+function safeSet(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.innerText = val;
+}
 
+function resolveTransactionDate(asset) {
+  const log = JSON.parse(localStorage.getItem("assetTransactions") || "{}");
   return (
     asset.transactionDateTime ||
-    asset.transactionAt ||
-    asset.lastTransactionAt ||
-    asset.lastUpdated ||
-    asset.updatedAt ||
-    asset.borrowedAt ||
-    asset.returnedAt ||
-    localEntry?.dateTime ||
+    asset.transactionAt       ||
+    asset.lastTransactionAt   ||
+    asset.lastUpdated         ||
+    asset.updatedAt           ||
+    asset.borrowedAt          ||
+    asset.returnedAt          ||
+    (log[asset.id] && log[asset.id].dateTime) ||
     ""
   );
 }
 
-function formatTransactionDateTime(value) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+function formatDateTime(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? String(value) : d.toLocaleString();
 }
 
-// ================= DOWNLOAD QR =================
-// Uses an <img> + <canvas> to avoid cross-origin fetch() issues in all browsers.
+/** Minimal XSS escaper for data inserted into innerHTML */
+function esc(str) {
+  return String(str == null ? "" : str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// ─── QR DOWNLOAD ─────────────────────────────────────────────
+// api.qrserver.com supports CORS — draw to canvas → Blob → download.
+// Falls back to window.open if canvas is blocked (should not happen).
+
 function downloadQR(id, url) {
-  const img = new Image();
-  img.crossOrigin = "anonymous"; // request CORS header from qrserver.com (they support it)
-  img.onload = function () {
+  const img   = new Image();
+  img.crossOrigin = "anonymous";
+
+  img.onload = () => {
     try {
       const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width  = img.naturalWidth  || 200;
+      canvas.height = img.naturalHeight || 200;
       canvas.getContext("2d").drawImage(img, 0, 0);
-      canvas.toBlob(function (blob) {
-        const link = document.createElement("a");
-        const objectURL = URL.createObjectURL(blob);
-        link.href = objectURL;
-        link.download = id + ".png";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(objectURL);
+      canvas.toBlob((blob) => {
+        if (!blob) { window.open(url, "_blank"); return; }
+        const a   = document.createElement("a");
+        const obj = URL.createObjectURL(blob);
+        a.href     = obj;
+        a.download = id + ".png";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(obj);
       }, "image/png");
-    } catch (err) {
-      // Fallback: open image in new tab so the user can save manually
-      console.warn("Canvas QR download failed, opening in new tab:", err);
+    } catch {
       window.open(url, "_blank");
     }
   };
-  img.onerror = function () {
-    window.open(url, "_blank");
-  };
-  // Cache-bust prevents a stale opaque response from blocking the canvas taint check
-  img.src = url + (url.includes("?") ? "&" : "?") + "_cb=" + Date.now();
+
+  img.onerror = () => window.open(url, "_blank");
+  // Cache-bust prevents a previously-cached opaque response from tainting the canvas
+  img.src = url + (url.includes("?") ? "&" : "?") + "_t=" + Date.now();
 }
 
-// ================= EDIT =================
+// ─── CRUD ─────────────────────────────────────────────────────
+
 function saveEdit(btn, id) {
   const row = btn.closest("tr");
-  setShopifyLoading(true);
-  jsonpRequest(CONFIG.API_URL, {
-    action: "editAsset",
-    assetID: id,
-    name: row.cells[1].innerText,
-    category: row.cells[2].innerText,
+  setLoading(true);
+
+  apiPost(CONFIG.API_URL, {
+    action:   "editAsset",
+    assetID:  id,
+    name:     row.cells[1].innerText.trim(),
+    category: row.cells[2].innerText.trim(),
     location: "",
   })
     .then(() => loadAssets())
-    .catch(() => alert("Edit failed"))
-    .finally(() => setShopifyLoading(false));
+    .catch((err) => alert("Edit failed: " + err.message))
+    .finally(() => setLoading(false));
 }
 
-// ================= DELETE =================
 function deleteAsset(id) {
-  if (!confirm("Delete this asset?")) return;
-  setShopifyLoading(true);
-  jsonpRequest(CONFIG.API_URL, { action: "deleteAsset", assetID: id })
+  if (!confirm("Delete asset " + id + "?")) return;
+  setLoading(true);
+
+  apiPost(CONFIG.API_URL, { action: "deleteAsset", assetID: id })
     .then(() => loadAssets())
-    .catch(() => alert("Delete failed"))
-    .finally(() => setShopifyLoading(false));
+    .catch((err) => alert("Delete failed: " + err.message))
+    .finally(() => setLoading(false));
 }
 
-// ================= ADD ASSET =================
-// Uses JSONP for the add call so no CORS preflight is needed.
 async function addAsset() {
-  const name = document.getElementById("assetName").value.trim();
+  const name     = document.getElementById("assetName").value.trim();
   const category = document.getElementById("category").value.trim();
-  if (!name) {
-    alert("Name required");
-    return;
-  }
 
-  setShopifyLoading(true);
+  if (!name) { alert("Asset name is required."); return; }
+
+  setLoading(true);
   try {
     const assetID = await generateNextAssetID();
-
-    const result = await jsonpRequest(CONFIG.API_URL, {
+    const result  = await apiPost(CONFIG.API_URL, {
       action: "addAsset",
-      assetID: assetID,
-      name: name,
-      category: category,
-      location: "",
+      assetID, name, category, location: "",
     });
 
-    // Google Apps Script returns different success signals — handle both
-    if (
-      result &&
-      (result.success === true ||
-        (result.message && result.message.toLowerCase().includes("success")))
-    ) {
-      generateQR(assetID);
-      alert("Asset added successfully: " + assetID);
+    const ok =
+      result?.success === true ||
+      (result?.message || "").toLowerCase().includes("success");
+
+    if (ok) {
+      generateQRPreview(assetID);
+      alert("Asset added: " + assetID);
       loadAssets();
-      document.getElementById("addAssetForm").reset();
+      const form = document.getElementById("addAssetForm");
+      if (form) form.reset();
     } else {
-      alert((result && result.message) || (result && result.error) || "Failed to add asset");
+      alert(result?.error || result?.message || "Failed to add asset.");
     }
-  } catch (error) {
-    console.error("Error adding asset:", error);
-    alert("Failed to add asset");
+  } catch (err) {
+    console.error("[addAsset]", err);
+    alert("Failed to add asset: " + err.message);
   } finally {
-    setShopifyLoading(false);
+    setLoading(false);
   }
 }
 
 async function generateNextAssetID() {
   try {
-    const data = await jsonpRequest(CONFIG.API_URL, { action: "getAssets" });
-    if (!data || data.length === 0) return "AST-001";
-    const numbers = data.map((asset) => {
-      const match = asset.id.match(/AST-(\d+)/);
-      return match ? parseInt(match[1], 10) : 0;
-    });
-    return "AST-" + String(Math.max(...numbers) + 1).padStart(3, "0");
+    const data  = await apiGet(CONFIG.API_URL, { action: "getAssets" });
+    const items = Array.isArray(data) ? data : [];
+    if (!items.length) return "AST-001";
+
+    const max = Math.max(
+      0,
+      ...items.map((a) => {
+        const m = (a.id || "").match(/AST-(\d+)/);
+        return m ? parseInt(m[1], 10) : 0;
+      })
+    );
+    return "AST-" + String(max + 1).padStart(3, "0");
   } catch {
     return "AST-" + Date.now();
   }
 }
 
-// ================= QR PREVIEW =================
-function generateQR(id) {
+// ─── QR PREVIEW ──────────────────────────────────────────────
+
+function generateQRPreview(id) {
   const container = document.getElementById("qrPreviewContainer");
-  const img = document.getElementById("qrPreview");
+  const img       = document.getElementById("qrPreview");
   if (!container || !img) return;
   container.style.display = "block";
-  img.src = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(id);
+  img.src =
+    "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" +
+    encodeURIComponent(id);
 }
 
-// ================= SEARCH =================
+// ─── SEARCH ───────────────────────────────────────────────────
+
 function searchInventory() {
-  const input = document.getElementById("search").value.toLowerCase();
+  const q = (document.getElementById("search").value || "").toLowerCase();
   document.querySelectorAll("#assetBody tr").forEach((row) => {
-    row.style.display = row.innerText.toLowerCase().includes(input) ? "" : "none";
+    row.style.display = row.innerText.toLowerCase().includes(q) ? "" : "none";
   });
 }
 
-// ================= CSV =================
+// ─── CSV ──────────────────────────────────────────────────────
+
 function downloadCSV() {
   const table = document.querySelector("table");
   if (!table) return;
-  const csv = [];
+
+  const rows = [];
   table.querySelectorAll("tr").forEach((row) => {
-    const rowData = [];
-    row.querySelectorAll("td,th").forEach((col) =>
-      rowData.push('"' + col.innerText.replace(/"/g, '""') + '"')
+    const cols = [];
+    row.querySelectorAll("td,th").forEach((cell) =>
+      cols.push('"' + cell.innerText.replace(/"/g, '""') + '"')
     );
-    csv.push(rowData.join(","));
+    rows.push(cols.join(","));
   });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(
-    new Blob([csv.join("\n")], { type: "text/csv" })
-  );
-  link.download = "BorrowSmart_Inventory_Report.csv";
-  link.click();
+
+  const a   = document.createElement("a");
+  a.href    = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv" }));
+  a.download = "BorrowSmart_Inventory_Report.csv";
+  a.click();
 }
 
-// ================= INIT =================
-document.addEventListener("DOMContentLoaded", function () {
+// ─── INIT ─────────────────────────────────────────────────────
+
+document.addEventListener("DOMContentLoaded", () => {
   updateUI();
   initSecretKey();
 
+  // ── Mobile nav
   const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
-  const mobileNav = document.querySelector(".mobile-nav");
+  const mobileNav     = document.querySelector(".mobile-nav");
+
   if (mobileMenuBtn && mobileNav) {
-    mobileMenuBtn.addEventListener("click", function (e) {
+    mobileMenuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      mobileNav.classList.toggle("active");
-      document.body.style.overflow = mobileNav.classList.contains("active")
-        ? "hidden"
-        : "";
+      const open = mobileNav.classList.toggle("active");
+      document.body.style.overflow = open ? "hidden" : "";
     });
-    document.addEventListener("click", function (e) {
-      if (
-        !mobileNav.contains(e.target) &&
-        !mobileMenuBtn.contains(e.target)
-      ) {
+
+    document.addEventListener("click", (e) => {
+      if (!mobileNav.contains(e.target) && !mobileMenuBtn.contains(e.target)) {
         mobileNav.classList.remove("active");
         document.body.style.overflow = "";
       }
     });
-    mobileNav.addEventListener("click", function (e) {
+
+    mobileNav.addEventListener("click", (e) => {
       if (e.target.tagName === "A") {
         mobileNav.classList.remove("active");
         document.body.style.overflow = "";
@@ -550,14 +542,16 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  const observer = new IntersectionObserver((entries) => {
+  // ── Card entrance animations
+  const isMobile  = window.innerWidth < 768;
+  const observer  = new IntersectionObserver((entries) =>
     entries.forEach((entry) => {
       if (entry.isIntersecting) entry.target.classList.add("animate-in");
-    });
-  });
-  const isMobile = window.innerWidth < 768;
+    })
+  );
+
   document.querySelectorAll(".card, .stat-card, .team-card").forEach((el) => {
-    if (!isMobile) observer.observe(el);
-    else el.classList.add("animate-in");
+    if (isMobile) el.classList.add("animate-in");
+    else observer.observe(el);
   });
 });
