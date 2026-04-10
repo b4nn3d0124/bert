@@ -99,8 +99,19 @@
             </div>
             <div class="form-group">
               <label>Category</label>
-              <input type="text" id="category" required placeholder="Enter category name">
+              <select id="category" required onchange="handleCategoryChange(this.value)">
+                <option value="">Select Category</option>
+                <option value="Keys">Keys</option>
+                <option value="Electronics">Electronics</option>
+                <option value="Equipment">Equipment</option>
+                <option value="Tools">Tools</option>
+                <option value="Others">Others</option>
+              </select>
             </div>
+          </div>
+          <div id="customCategoryDiv" class="form-group" style="display:none; margin-top:16px;">
+            <label>Enter Category Name</label>
+            <input type="text" id="customCategory" placeholder="Enter custom category name">
           </div>
           <div style="display:flex; gap:16px; align-items:center;">
             <button type="submit" class="btn-primary" id="addAssetBtn">Add Asset</button>
@@ -147,6 +158,21 @@ window.addEventListener("beforeunload", function() {
   localStorage.removeItem("adminLoggedIn");
   localStorage.removeItem("currentAdmin");
 });
+
+// ================= Category Change Handler =================
+function handleCategoryChange(value) {
+  const customCategoryDiv = document.getElementById('customCategoryDiv');
+  const customCategoryInput = document.getElementById('customCategory');
+  
+  if (value === 'Others') {
+    customCategoryDiv.style.display = 'block';
+    customCategoryInput.required = true;
+  } else {
+    customCategoryDiv.style.display = 'none';
+    customCategoryInput.required = false;
+    customCategoryInput.value = '';
+  }
+}
 </script>
 </body>
 </html>
