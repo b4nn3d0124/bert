@@ -526,9 +526,9 @@ function addCustomCategoryToDropdown(categoryName) {
   handleCategoryChange(categoryName);
 }
 
-/**
+/*
  * Re-renders the row of deletable tag pills beneath the dropdown.
- * Only custom categories (not built-ins) appear here.
+ * Only custom categories (not built-ins) appear here.*/
  
 function renderCategoryTags() {
   const tagList = document.getElementById("categoryTagList");
@@ -555,9 +555,9 @@ function renderCategoryTags() {
     .join("");
 }
 
-/**
+/*
  * Shows a confirmation dialog, then removes the category from
- * both the dropdown and the tag list if the user confirms.
+ * both the dropdown and the tag list if the user confirms.*/
  
 function promptDeleteCategory(categoryName) {
   const confirmed = confirm(
@@ -586,7 +586,7 @@ function promptDeleteCategory(categoryName) {
 
   // Re-render the tag pills
   renderCategoryTags();
-} **/
+}
 
 // ─── ASSET ID GENERATOR ───────────────────────────────────────
 
