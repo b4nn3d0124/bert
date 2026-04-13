@@ -476,30 +476,40 @@ function deleteAsset(id) {
 
 async function addAsset() {
   const name           = document.getElementById("assetName").value.trim();
-  const category       = document.getElementById("category").value.trim();
-  const customCategory = document.getElementById("customCategory")?.value.trim() || "";
+  const select         = document.getElementById("category");
+  const textInput      = document.getElementById("categoryTextInput");
 
   if (!name) { alert("Asset name is required."); return; }
 
-  // Use custom category if "Others" is selected
-  let finalCategory = category;
-  if (category === "Others") {
-    if (!customCategory) {
+  // Determine the final category:
+  //   • If the text-input swap is active, use its value (user picked "Others")
+  //   • Otherwise use whatever the dropdown has selected
+  let finalCategory;
+  let usedCustomInput = false;
+
+  if (textInput) {
+    // "Others" swap is active
+    finalCategory = textInput.value.trim();
+    usedCustomInput = true;
+
+    if (!finalCategory) {
       alert("Please enter a custom category name.");
       return;
     }
 
-    // Prevent duplicate categories (case-insensitive check against existing dropdown)
-    const normalized = customCategory.trim().toLowerCase();
-    const existing = Array.from(document.getElementById("category").options)
-      .map(opt => opt.value.toLowerCase());
-
+    // Prevent duplicate categories (case-insensitive)
+    const normalized = finalCategory.toLowerCase();
+    const existing   = Array.from(select.options).map(o => o.value.toLowerCase());
     if (existing.includes(normalized)) {
       alert("Category already exists!");
       return;
     }
-
-    finalCategory = customCategory;
+  } else {
+    finalCategory = select.value.trim();
+    if (!finalCategory) {
+      alert("Please select a category.");
+      return;
+    }
   }
 
   setLoading(true);
@@ -518,9 +528,11 @@ async function addAsset() {
       (result?.message || "").toLowerCase().includes("success");
 
     if (ok) {
-      // If a custom category was entered, add it to the dropdown
-      if (category === "Others" && customCategory) {
-        addCustomCategoryToDropdown(customCategory);
+      // If a custom category was entered, add it to the dropdown for future use
+      if (usedCustomInput && finalCategory) {
+        // First restore the dropdown so addCustomCategoryToDropdown can find it
+        _restoreCategoryDropdown();
+        addCustomCategoryToDropdown(finalCategory);
       }
 
       generateQRPreview(assetID);
@@ -529,9 +541,9 @@ async function addAsset() {
 
       const form = document.getElementById("addAssetForm");
       if (form) {
+        // Ensure the text-input swap is cleared before resetting the form
+        _restoreCategoryDropdown();
         form.reset();
-        const customDiv = document.getElementById("customCategoryDiv");
-        if (customDiv) customDiv.style.display = "none";
       }
     } else {
       alert(result?.error || result?.message || "Failed to add asset.");
@@ -546,43 +558,84 @@ async function addAsset() {
 
 // ─── CATEGORY MANAGEMENT ──────────────────────────────────────
 
-// Tracks all user-added custom categories for this session
-const customCategories = [];
-
 /**
- * Shows/hides the custom category text input depending on
- * whether the user selected "Others" from the dropdown.
+ * Called by the category <select> onChange.
+ * When "Others" is chosen: hides the dropdown and swaps in a text input
+ * in the exact same position. Any other selection restores the dropdown.
  */
 function handleCategoryChange(value) {
-  const customCategoryDiv   = document.getElementById("customCategoryDiv");
-  const customCategoryInput = document.getElementById("customCategory");
-
   if (value === "Others") {
-    customCategoryDiv.style.display   = "block";
-    customCategoryInput.required      = true;
-  } else {
-    customCategoryDiv.style.display   = "none";
-    customCategoryInput.required      = false;
-    customCategoryInput.value         = "";
+    _showCategoryTextInput();
+  }
+  // No-op for normal selections — dropdown stays visible as-is.
+}
+
+/**
+ * Replaces the category <select> with a plain text <input> in-place.
+ * A small "← back" button lets the user restore the dropdown.
+ */
+function _showCategoryTextInput() {
+  const select = document.getElementById("category");
+  if (!select) return;
+
+  // Build the replacement input
+  const input = document.createElement("input");
+  input.type        = "text";
+  input.id          = "categoryTextInput";
+  input.placeholder = "Enter new category…";
+  input.required    = true;
+  // Mirror the select's className so it inherits the same CSS
+  input.className   = select.className;
+
+  // Small inline "back" button so the user can return to the dropdown
+  const backBtn = document.createElement("button");
+  backBtn.type      = "button";
+  backBtn.id        = "categoryBackBtn";
+  backBtn.textContent = "← Back";
+  backBtn.style.cssText =
+    "margin-left:6px;font-size:12px;padding:4px 8px;cursor:pointer;";
+  backBtn.addEventListener("click", _restoreCategoryDropdown);
+
+  // Swap: hide the select, insert input + back-button after it
+  select.style.display = "none";
+  select.insertAdjacentElement("afterend", backBtn);
+  select.insertAdjacentElement("afterend", input);
+
+  input.focus();
+}
+
+/**
+ * Removes the text input (and back button) and shows the dropdown again.
+ * Resets the dropdown to the blank placeholder so nothing looks selected.
+ */
+function _restoreCategoryDropdown() {
+  const select  = document.getElementById("category");
+  const input   = document.getElementById("categoryTextInput");
+  const backBtn = document.getElementById("categoryBackBtn");
+
+  if (input)   input.remove();
+  if (backBtn) backBtn.remove();
+
+  if (select) {
+    select.style.display = "";
+    select.value = "";        // reset to placeholder
   }
 }
 
 /**
- * Inserts a new <option> into the category dropdown (before "Others")
- * and renders a deletable tag pill below the dropdown.
- * Skips duplicates silently.
+ * After a successful addAsset(), inserts the new category into the dropdown
+ * (before "Others") so it's available on the next add without a page reload.
+ * Skips silently if it already exists.
  */
 function addCustomCategoryToDropdown(categoryName) {
   const select = document.getElementById("category");
   if (!select) return;
 
-  // Skip if already exists in the dropdown
   const alreadyExists = Array.from(select.options).some(
-    (o) => o.value === categoryName
+    (o) => o.value.toLowerCase() === categoryName.toLowerCase()
   );
   if (alreadyExists) return;
 
-  // Insert the new option just before "Others"
   const othersOption = Array.from(select.options).find(
     (o) => o.value === "Others"
   );
@@ -592,76 +645,6 @@ function addCustomCategoryToDropdown(categoryName) {
   } else {
     select.appendChild(newOption);
   }
-
-  // Track in our custom list and refresh the tag pills
-  customCategories.push(categoryName);
-  renderCategoryTags();
-
-  // Auto-select the newly added category
-  select.value = categoryName;
-  handleCategoryChange(categoryName);
-}
-
-/*
- * Re-renders the row of deletable tag pills beneath the dropdown.
- * Only custom categories (not built-ins) appear here.*/
- 
-function renderCategoryTags() {
-  const tagList = document.getElementById("categoryTagList");
-  if (!tagList) return;
-
-  if (customCategories.length === 0) {
-    tagList.innerHTML = "";
-    return;
-  }
-
-  tagList.innerHTML = customCategories
-    .map(
-      (cat) => `
-        <span class="category-tag">
-          ${esc(cat)}
-          <button
-            type="button"
-            class="category-tag-delete"
-            onclick="promptDeleteCategory('${esc(cat)}')"
-            title="Delete category"
-          >&times;</button>
-        </span>`
-    )
-    .join("");
-}
-
-/*
- * Shows a confirmation dialog, then removes the category from
- * both the dropdown and the tag list if the user confirms.*/
- 
-function promptDeleteCategory(categoryName) {
-  const confirmed = confirm(
-    `Do you want to delete the category "${categoryName}"?\n\nThis will only remove it from the dropdown. Existing assets with this category will not be affected.`
-  );
-  if (!confirmed) return;
-
-  // Remove the <option> from the dropdown
-  const select = document.getElementById("category");
-  if (select) {
-    const option = Array.from(select.options).find(
-      (o) => o.value === categoryName
-    );
-    if (option) select.removeChild(option);
-
-    // If this category was currently selected, reset the dropdown
-    if (select.value === categoryName) {
-      select.value = "";
-      handleCategoryChange("");
-    }
-  }
-
-  // Remove from the in-memory list
-  const idx = customCategories.indexOf(categoryName);
-  if (idx !== -1) customCategories.splice(idx, 1);
-
-  // Re-render the tag pills
-  renderCategoryTags();
 }
 
 // ─── ASSET ID GENERATOR ───────────────────────────────────────
