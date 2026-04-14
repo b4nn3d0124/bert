@@ -159,6 +159,136 @@ async function loadAccounts() {
     setLoading(false);
   }
 }
+// ─── LOAD ASSETS ─────────────────────────────────────────────
+
+async function loadAssets() {
+  setLoading(true);
+  try {
+    const data = await apiGet(CONFIG.API_URL, { action: "getAssets" });
+    const body = document.getElementById("assetBody");
+    if (!body) return;
+
+    const assets = Array.isArray(data) ? data : [];
+
+    // Auto-populate the category dropdown from live asset data
+    const categories = extractCategories(assets);
+    updateCategoryDropdown(categories);
+
+    let html = "", borrowed = 0, available = 0;
+
+    assets.forEach((asset) => {
+      if (asset.status === "Borrowed")  borrowed++;
+      if (asset.status === "Available") available++;
+
+      const badge =
+        asset.status === "Available" ? "badge badge-green" :
+        asset.status === "Borrowed"  ? "badge badge-red"   : "badge";
+
+      const locked =
+        asset.status === "Borrowed"
+          ? "disabled style='opacity:.4;pointer-events:none'"
+          : "";
+
+      const txFormatted = formatDateTime(resolveTransactionDate(asset));
+
+      html += `
+        <tr>
+          <td>${esc(asset.id)}</td>
+          <td contenteditable="true">${esc(asset.name)}</td>
+          <td contenteditable="true">${esc(asset.category || "")}</td>
+          <td><span class="${badge}">${esc(asset.status)}</span></td>
+          <td>${esc(asset.holder || "")}</td>
+          <td><span style="font-size:12px;color:#cbd5e1">${txFormatted}</span></td>
+          <td>${asset.qr
+            ? `<img src="${esc(asset.qr)}" width="40" style="cursor:pointer"
+                    onclick="downloadQR('${esc(asset.id)}','${esc(asset.qr)}')">`
+            : "—"
+          }</td>
+          <td>
+            <button onclick="saveEdit(this,'${esc(asset.id)}')" ${locked}>💾</button>
+            <button onclick="deleteAsset('${esc(asset.id)}')">🗑️</button>
+          </td>
+        </tr>`;
+    });
+
+    body.innerHTML = html;
+    safeSet("borrowedAssets",  borrowed);
+    safeSet("availableAssets", available);
+  } catch (err) {
+    console.error("[loadAssets]", err);
+    alert("Failed to load assets: " + err.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+function safeSet(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.innerText = val;
+}
+
+function resolveTransactionDate(asset) {
+  const log = JSON.parse(localStorage.getItem("assetTransactions") || "{}");
+  return (
+    asset.transactionDateTime ||
+    asset.transactionAt       ||
+    asset.lastTransactionAt   ||
+    asset.lastUpdated         ||
+    asset.updatedAt           ||
+    asset.borrowedAt          ||
+    asset.returnedAt          ||
+    (log[asset.id] && log[asset.id].dateTime) ||
+    ""
+  );
+}
+
+function formatDateTime(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+}
+
+/** Minimal XSS escaper for data inserted into innerHTML */
+function esc(str) {
+  return String(str == null ? "" : str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// ─── QR DOWNLOAD ─────────────────────────────────────────────
+
+function downloadQR(id, url) {
+  const img   = new Image();
+  img.crossOrigin = "anonymous";
+
+  img.onload = () => {
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width  = img.naturalWidth  || 200;
+      canvas.height = img.naturalHeight || 200;
+      canvas.getContext("2d").drawImage(img, 0, 0);
+      canvas.toBlob((blob) => {
+        if (!blob) { window.open(url, "_blank"); return; }
+        const a   = document.createElement("a");
+        const obj = URL.createObjectURL(blob);
+        a.href     = obj;
+        a.download = id + ".png";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(obj);
+      }, "image/png");
+    } catch {
+      window.open(url, "_blank");
+    }
+  };
+
+  img.onerror = () => window.open(url, "_blank");
+  img.src = url + (url.includes("?") ? "&" : "?") + "_t=" + Date.now();
+}
 
 // ── Add account ───────────────────────────────────────────────
 
