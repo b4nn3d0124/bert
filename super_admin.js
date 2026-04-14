@@ -54,34 +54,6 @@ async function apiGet(baseUrl, params = {}, timeoutMs = 15000) {
   }
 }
 
-/**
- * POST — sends a JSON body.
- * Used for all write operations (add, edit, delete).
- * Handled by doPost() in GAS.
- */
-async function apiPost(baseUrl, body = {}, timeoutMs = 12000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(baseUrl, {
-      method: "POST",
-      signal: controller.signal,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    clearTimeout(timer);
-
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    return safeParseJson(await res.text());
-  } catch (err) {
-    clearTimeout(timer);
-    if (err.name === "AbortError")
-      throw new Error("Request timed out (" + timeoutMs / 1000 + "s)");
-    throw err;
-  }
-}
-
 function safeParseJson(text) {
   const clean = (text || "").trim().replace(/^\)\]\}'/, "").trim();
   try {
