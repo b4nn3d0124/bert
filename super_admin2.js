@@ -22,20 +22,30 @@ function waitForConfig() {
 }
 
 // ── Single API helper — GET only, no preflight ────────────────
-async function apiGet(baseUrl, params = {}, timeoutMs = 15000) {
+async function apiGet(baseUrl, params = {}, timeoutMs = 20000) {
+  if (!baseUrl) throw new Error("API URL is not configured. Check config.js.");
+
   const url = new URL(baseUrl);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+  // Explicitly set every param — never skip empty strings.
+  // An empty "holder" param intentionally clears the field in GAS.
+  Object.entries(params).forEach(([k, v]) => {
+    url.searchParams.set(k, (v === null || v === undefined) ? "" : String(v));
+  });
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url.toString(), { method: "GET", signal: controller.signal });
     clearTimeout(timer);
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    return safeParseJson(await res.text());
+    if (!res.ok) throw new Error("HTTP " + res.status + " — check GAS deployment.");
+    const text = await res.text();
+    return safeParseJson(text);
   } catch (err) {
     clearTimeout(timer);
-    if (err.name === "AbortError") throw new Error("Request timed out (" + timeoutMs / 1000 + "s)");
-    throw err;
+    if (err.name === "AbortError")
+      throw new Error("Request timed out after " + (timeoutMs / 1000) + "s. Verify your GAS /exec URL.");
+    // Network/CORS errors land here — usually wrong URL or GAS not deployed as Anyone
+    throw new Error(err.message || "Network error. Check GAS deployment URL and access permissions.");
   }
 }
 
@@ -92,7 +102,9 @@ document.addEventListener("DOMContentLoaded", async function () {
 });
 
 function getAssetsApiUrl() {
-  return CONFIG.API_URL || CONFIG.ADMIN_API_URL;
+  // Always prefer ADMIN_API_URL — it's the deployed GAS /exec URL.
+  // CONFIG.API_URL may point to a different (or non-existent) deployment.
+  return CONFIG.ADMIN_API_URL || CONFIG.API_URL;
 }
 
 // ── Load accounts ─────────────────────────────────────────────
@@ -114,12 +126,25 @@ async function loadAssetsForSuperAdmin() {
   if (!body && !cardContainer) return;
   setLoading(true);
   try {
-    const result = await apiGet(getAssetsApiUrl(), { action: "getAssets", t: Date.now() });
-    assets = Array.isArray(result) ? result : [];
+    const apiUrl = getAssetsApiUrl();
+    if (!apiUrl) {
+      showErrorPopup("Config Error", "No API URL found in config.js. Set CONFIG.ADMIN_API_URL to your GAS /exec URL.");
+      return;
+    }
+    const result = await apiGet(apiUrl, { action: "getAssets", t: Date.now() });
+    // GAS getAssets() returns a plain array, not {success, assets}
+    if (Array.isArray(result)) {
+      assets = result;
+    } else if (result && result.success === false) {
+      showErrorPopup("Backend Error", result.error || "GAS returned an error for getAssets.");
+      assets = [];
+    } else {
+      assets = [];
+    }
     displaySuperAssets();
     renderAssetCards();
   } catch (err) {
-    showErrorPopup("Error", "Failed to load assets: " + err.message);
+    showErrorPopup("Connection Error", "Could not load assets: " + err.message);
   } finally { setLoading(false); }
 }
 
@@ -344,15 +369,22 @@ async function saveSuperAssetCard(assetId, btn) {
 async function returnSuperAsset(assetId, btn) {
   if (savingRows.has(assetId)) return;
   const asset = assets.find(a => String(a.id) === String(assetId));
-  const holder = asset?.holder || "current holder";
+  if (!asset) { showErrorPopup("Error", "Asset " + assetId + " not found in local data. Try refreshing."); return; }
+  const holder = asset.holder || "current holder";
   if (!confirm(`Mark asset ${assetId} as Available and clear holder (${holder})?`)) return;
 
   savingRows.add(assetId);
   setBtnLoading(btn, true, "♻️ Return");
   setLoading(true);
   try {
+    // Send full asset data so GAS has all fields — avoids "Asset not found" if IDs differ
     const result = await apiGet(getAssetsApiUrl(), {
-      action: "editAssetSuper", assetID: assetId, status: "Available", holder: "",
+      action:   "editAssetSuper",
+      assetID:  String(asset.id),   // use the exact ID from the fetched data
+      name:     asset.name     || "",
+      category: asset.category || "",
+      status:   "Available",
+      holder:   "",                  // explicitly clear holder
     });
     if (result.success) {
       await loadAssetsForSuperAdmin();
@@ -361,7 +393,7 @@ async function returnSuperAsset(assetId, btn) {
       showErrorPopup("Error", result.error || "Failed to return asset.");
     }
   } catch (e) {
-    showErrorPopup("Error", "Failed to return asset: " + e.message);
+    showErrorPopup("Error", "Return failed: " + e.message);
   } finally {
     savingRows.delete(assetId);
     setLoading(false);
@@ -372,7 +404,8 @@ async function returnSuperAsset(assetId, btn) {
 async function returnSuperAssetCard(assetId, btn) {
   if (savingRows.has(assetId)) return;
   const asset = assets.find(a => String(a.id) === String(assetId));
-  const holder = asset?.holder || "current holder";
+  if (!asset) { showErrorPopup("Error", "Asset " + assetId + " not found in local data. Try refreshing."); return; }
+  const holder = asset.holder || "current holder";
   if (!confirm(`Mark asset ${assetId} as Available and clear holder (${holder})?`)) return;
 
   savingRows.add(assetId);
@@ -380,7 +413,12 @@ async function returnSuperAssetCard(assetId, btn) {
   setLoading(true);
   try {
     const result = await apiGet(getAssetsApiUrl(), {
-      action: "editAssetSuper", assetID: assetId, status: "Available", holder: "",
+      action:   "editAssetSuper",
+      assetID:  String(asset.id),
+      name:     asset.name     || "",
+      category: asset.category || "",
+      status:   "Available",
+      holder:   "",
     });
     if (result.success) {
       await loadAssetsForSuperAdmin();
@@ -389,7 +427,7 @@ async function returnSuperAssetCard(assetId, btn) {
       showErrorPopup("Error", result.error || "Failed to return asset.");
     }
   } catch (e) {
-    showErrorPopup("Error", "Failed to return asset: " + e.message);
+    showErrorPopup("Error", "Return failed: " + e.message);
   } finally {
     savingRows.delete(assetId);
     setLoading(false);
