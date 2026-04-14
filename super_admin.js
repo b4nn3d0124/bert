@@ -618,7 +618,7 @@ function saveEdit(btn, id) {
   const row = btn.closest("tr");
   setLoading(true);
 
-  apiPost(CONFIG.API_URL, {
+  apiGet(CONFIG.API_URL, {
     action:   "editAssetSuper",
     assetID:  id,
     name:     row.cells[1].innerText.trim(),
@@ -636,7 +636,7 @@ function deleteAsset(id) {
   if (!confirm("Delete asset " + id + "?")) return;
   setLoading(true);
 
-  apiPost(CONFIG.API_URL, { action: "deleteAsset", assetID: id })
+  apiGet(CONFIG.API_URL, { action: "deleteAsset", assetID: id })
     .then(() => loadAssets())
     .catch((err) => alert("Delete failed: " + err.message))
     .finally(() => setLoading(false));
@@ -683,7 +683,7 @@ async function addAsset() {
   setLoading(true);
   try {
     const assetID = await generateNextAssetID();
-    const result  = await apiPost(CONFIG.API_URL, {
+    const result  = await apiGet(CONFIG.API_URL, {
       action: "addAsset",
       assetID,
       name,
