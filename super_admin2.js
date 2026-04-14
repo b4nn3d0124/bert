@@ -9,6 +9,7 @@
 
 let accounts = [];
 let selectedAccounts = new Set();
+let assets = [];
 
 // ── Config wait ───────────────────────────────────────────────
 
@@ -126,7 +127,8 @@ document.addEventListener("DOMContentLoaded", async function () {
   }
 
   loadAccounts();
-
+  loadAssetsForSuperAdmin();
+  
   const mobileBtn = document.querySelector(".mobile-menu-btn");
   if (mobileBtn) {
     mobileBtn.addEventListener("click", function () {
@@ -135,6 +137,10 @@ document.addEventListener("DOMContentLoaded", async function () {
     });
   }
 });
+
+function getAssetsApiUrl() {
+  return CONFIG.API_URL || CONFIG.ADMIN_API_URL;
+}
 
 // ── Load accounts ─────────────────────────────────────────────
 
@@ -155,6 +161,29 @@ async function loadAccounts() {
   } catch (err) {
     console.error("Error loading admin accounts:", err);
     showErrorPopup("Error", "Failed to load admin accounts: " + err.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ── Load assets for super admin ──────────────────────────────
+
+async function loadAssetsForSuperAdmin() {
+  const body = document.getElementById("superAssetsBody");
+  if (!body) return;
+
+  setLoading(true);
+  try {
+    const result = await apiGet(getAssetsApiUrl(), {
+      action: "getAssets",
+      t: Date.now(),
+    });
+
+    assets = Array.isArray(result) ? result : [];
+    displaySuperAssets();
+  } catch (err) {
+    console.error("Error loading assets:", err);
+    showErrorPopup("Error", "Failed to load assets: " + err.message);
   } finally {
     setLoading(false);
   }
@@ -206,6 +235,7 @@ async function addAccount() {
     setLoading(false);
   }
 }
+
 
 // ── Save edits ────────────────────────────────────────────────
 
@@ -422,6 +452,237 @@ function searchAccounts() {
   document.querySelectorAll("#accountsBody tr").forEach((row) => {
     row.style.display = row.textContent.toLowerCase().includes(q) ? "" : "none";
   });
+}
+
+function displaySuperAssets() {
+  const body = document.getElementById("superAssetsBody");
+  if (!body) return;
+  body.innerHTML = "";
+
+  if (!assets.length) {
+    body.innerHTML =
+      '<tr><td colspan="8" style="text-align:center;color:var(--fg-muted);">No assets found</td></tr>';
+    return;
+  }
+
+  assets.forEach((asset) => {
+    const row = document.createElement("tr");
+    const txFormatted = formatDate(resolveTransactionDate(asset));
+    const holder = asset.holder || "";
+
+    row.innerHTML = `
+      <td>${esc(asset.id)}</td>
+      <td contenteditable="true" data-field="name">${esc(asset.name)}</td>
+      <td contenteditable="true" data-field="category">${esc(asset.category || "")}</td>
+      <td>
+        <select data-field="status">
+          <option value="Available" ${asset.status === "Available" ? "selected" : ""}>Available</option>
+          <option value="Borrowed" ${asset.status === "Borrowed" ? "selected" : ""}>Borrowed</option>
+        </select>
+      </td>
+      <td data-field="holder">${esc(holder)}</td>
+      <td><span style="font-size:12px;color:#cbd5e1">${txFormatted}</span></td>
+      <td>${asset.qr
+        ? `<img src="${esc(asset.qr)}" width="40" style="cursor:pointer"
+                onclick="downloadQR('${esc(asset.id)}','${esc(asset.qr)}')">`
+        : "—"
+      }</td>
+      <td>
+        <button onclick="saveSuperAssetChanges('${esc(asset.id)}', this)">💾</button>
+        <button onclick="markSuperAssetAvailable('${esc(asset.id)}', this)">♻️</button>
+        <button onclick="deleteSuperAsset('${esc(asset.id)}')">🗑️</button>
+      </td>`;
+    body.appendChild(row);
+  });
+}
+
+async function saveSuperAssetChanges(assetId, btn) {
+  const row = btn.closest("tr");
+  if (!row) return;
+
+  const name = row.querySelector('[data-field="name"]').textContent.trim();
+  const category = row.querySelector('[data-field="category"]').textContent.trim();
+  const status = row.querySelector('select[data-field="status"]').value;
+
+  if (!name || !category) {
+    showErrorPopup("Error", "Asset name and category are required.");
+    return;
+  }
+
+  const current = assets.find((a) => String(a.id) === String(assetId)) || {};
+  const holder = status === "Available" ? "" : (current.holder || "");
+
+  setLoading(true);
+  try {
+    const result = await apiGet(getAssetsApiUrl(), {
+      action: "editAssetSuper",
+      assetID: assetId,
+      name,
+      category,
+      status,
+      holder,
+    });
+
+    if (result.success) {
+      await loadAssetsForSuperAdmin();
+      showSuccessPopup("Success", "Asset updated successfully.");
+    } else {
+      showErrorPopup("Error", result.error || "Failed to update asset.");
+    }
+  } catch (err) {
+    console.error("Error updating asset:", err);
+    showErrorPopup("Error", "Failed to update asset: " + err.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+function markSuperAssetAvailable(assetId, btn) {
+  const row = btn.closest("tr");
+  if (!row) return;
+  const statusSelect = row.querySelector('select[data-field="status"]');
+  if (statusSelect) statusSelect.value = "Available";
+  saveSuperAssetChanges(assetId, btn);
+}
+
+async function deleteSuperAsset(assetId) {
+  if (!confirm("Delete asset " + assetId + "?")) return;
+
+  setLoading(true);
+  try {
+    const result = await apiGet(getAssetsApiUrl(), {
+      action: "deleteAssetSuper",
+      assetID: assetId,
+    });
+
+    if (result.success) {
+      await loadAssetsForSuperAdmin();
+      showSuccessPopup("Success", "Asset deleted successfully.");
+    } else {
+      showErrorPopup("Error", result.error || "Failed to delete asset.");
+    }
+  } catch (err) {
+    console.error("Error deleting asset:", err);
+    showErrorPopup("Error", "Failed to delete asset: " + err.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+function resolveTransactionDate(asset) {
+  return (
+    asset.transactionDateTime ||
+    asset.transactionAt ||
+    asset.lastTransactionAt ||
+    asset.lastUpdated ||
+    asset.updatedAt ||
+    asset.borrowedAt ||
+    asset.returnedAt ||
+    ""
+  );
+}
+
+function downloadQR(id, url) {
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+
+  img.onload = () => {
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || 200;
+      canvas.height = img.naturalHeight || 200;
+      canvas.getContext("2d").drawImage(img, 0, 0);
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          window.open(url, "_blank");
+          return;
+        }
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `${id}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+      }, "image/png");
+    } catch {
+      window.open(url, "_blank");
+    }
+  };
+
+  img.onerror = () => window.open(url, "_blank");
+  img.src = url;
+}
+
+async function addSuperAsset() {
+  const nameInput = document.getElementById("superAssetName");
+  const categoryInput = document.getElementById("superAssetCategory");
+  const name = nameInput.value.trim();
+  const category = categoryInput.value.trim();
+
+  if (!name || !category) {
+    showErrorPopup("Error", "Asset name and category are required.");
+    return;
+  }
+
+  const assetID = generateSuperAssetId();
+
+  setLoading(true);
+  try {
+    const result = await apiGet(getAssetsApiUrl(), {
+      action: "addAsset",
+      assetID,
+      name,
+      category,
+      location: "",
+    });
+
+    if (result.success || (result.message || "").toLowerCase().includes("success")) {
+      document.getElementById("addSuperAssetForm").reset();
+      await loadAssetsForSuperAdmin();
+      showSuccessPopup("Success", "Asset added successfully.");
+    } else {
+      showErrorPopup("Error", result.error || "Failed to add asset.");
+    }
+  } catch (err) {
+    console.error("Error adding asset:", err);
+    showErrorPopup("Error", "Failed to add asset: " + err.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+function generateSuperAssetId() {
+  const max = Math.max(
+    0,
+    ...assets.map((a) => {
+      const match = String(a.id || "").match(/AST-(\d+)/i);
+      return match ? parseInt(match[1], 10) : 0;
+    })
+  );
+  return "AST-" + String(max + 1).padStart(3, "0");
+}
+
+function searchAssetsSuper() {
+  const q = document.getElementById("searchAssetsSuper").value.toLowerCase();
+  document.querySelectorAll("#superAssetsBody tr").forEach((row) => {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? "" : "none";
+  });
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? esc(value) : d.toLocaleString();
+}
+
+function esc(str) {
+  return String(str == null ? "" : str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // ── Popups ────────────────────────────────────────────────────
